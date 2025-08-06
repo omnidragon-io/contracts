@@ -1,0 +1,37 @@
+{
+  "name": "layerzero-cli-workspace",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@layerzerolabs/devtools": "^2.0.0",
+    "@layerzerolabs/devtools-evm-hardhat": "^4.0.0",
+    "@layerzerolabs/lz-definitions": "^3.0.120",
+    "@layerzerolabs/lz-evm-messagelib-v2": "^3.0.120",
+    "@layerzerolabs/lz-evm-oapp-v2": "^3.0.120",
+    "@layerzerolabs/lz-v2-utilities": "^3.0.120",
+    "@layerzerolabs/protocol-devtools": "^3.0.0",
+    "@layerzerolabs/toolbox-hardhat": "^0.6.12",
+    "solidity-bytes-utils": "^0.8.4"
+  },
+  "devDependencies": {
+    "@layerzerolabs/lz-evm-protocol-v2": "^3.0.120",
+    "@layerzerolabs/metadata-tools": "^3.0.0",
+    "@layerzerolabs/oft-evm": "^3.2.0",
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@types/node": "^24.1.0",
+    "dotenv": "^17.2.1",
+    "hardhat": "^2.26.1",
+    "hardhat-deploy": "^0.12.4",
+    "solmate": "^6.8.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}

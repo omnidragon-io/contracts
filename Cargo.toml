@@ -1,0 +1,25 @@
+[package]
+name = "omnidragon-vanity"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ethers = "2.0"
+tokio = { version = "1.0", features = ["full"] }
+hex = "0.4"
+sha3 = "0.10"
+rand = "0.8"
+clap = { version = "4.0", features = ["derive"] }
+rayon = "1.7"
+
+[[bin]]
+name = "vanity-generator"
+path = "src/main.rs"
+
+[[bin]]
+name = "vrf-vanity"
+path = "src/vrf_vanity.rs"
+
+[[bin]]
+name = "vrf-integrator-vanity"
+path = "src/vrf_integrator_vanity.rs"
