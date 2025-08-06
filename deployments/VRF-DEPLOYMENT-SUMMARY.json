@@ -1,0 +1,144 @@
+{
+  "deployment": {
+    "name": "OmniDragon Cross-Chain VRF v2.5 System",
+    "version": "1.0.0",
+    "deployedAt": "2024-12-19",
+    "status": "FULLY OPERATIONAL",
+    "description": "Complete cross-chain VRF system using Chainlink VRF v2.5 and LayerZero V2"
+  },
+  "contracts": {
+    "sonic": {
+      "chainId": 146,
+      "network": "sonic",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/sonic?auth=p886of4gitu82",
+      "blockExplorer": "https://sonicscan.org",
+      "contracts": {
+        "ChainlinkVRFIntegratorV2_5": {
+          "address": "0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90",
+          "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+          "transactionHash": "0x05fbbfe5e66cac235aeead9c2b60c1d508ab8ba1cfd1ad0fe6eaebe804df8bf4",
+          "blockNumber": 41817391,
+          "verified": true,
+          "explorerUrl": "https://sonicscan.org/address/0x4cc69c8fed6d340742a347905ac99ddd5b2b0a90"
+        },
+        "OmniDragonRegistry": {
+          "address": "0x69D485e1c69e2fB0B9Be0b800427c69D51d30777",
+          "deploymentType": "CREATE2",
+          "vanityPattern": "0x69...0777"
+        }
+      }
+    },
+    "arbitrum": {
+      "chainId": 42161,
+      "network": "arbitrum",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/arbitrum?auth=p886of4gitu82",
+      "blockExplorer": "https://arbiscan.io",
+      "contracts": {
+        "OmniDragonVRFConsumerV2_5": {
+          "address": "0x4CC1b5e72b9a5A6D6cE2131b444bB483FA2815c8",
+          "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+          "transactionHash": "0xa5ba81a7be169899a4f034156b6a8557a364a8069ecdcc40bf0b7910f16b94b2",
+          "blockNumber": 365434678,
+          "verified": true,
+          "explorerUrl": "https://arbiscan.io/address/0x4cc1b5e72b9a5a6d6ce2131b444bb483fa2815c8"
+        },
+        "OmniDragonRegistry": {
+          "address": "0x69D485e1c69e2fB0B9Be0b800427c69D51d30777",
+          "deploymentType": "CREATE2",
+          "vanityPattern": "0x69...0777"
+        }
+      }
+    }
+  },
+  "layerZero": {
+    "version": "V2",
+    "pathways": {
+      "sonic_to_arbitrum": {
+        "sourceEid": 30272,
+        "destinationEid": 30110,
+        "configured": true,
+        "enforced_options": {
+          "gas": 200000,
+          "value": 0
+        }
+      },
+      "arbitrum_to_sonic": {
+        "sourceEid": 30110,
+        "destinationEid": 30272,
+        "configured": true,
+        "enforced_options": {
+          "gas": 200000,
+          "value": 0
+        }
+      }
+    },
+    "fees": {
+      "standard_quote": "~0.195 ETH",
+      "custom_gas_quote": "~0.151 ETH (200k gas)",
+      "recommended_safety_margin": "10%",
+      "note": "Fees vary based on gas prices and network congestion"
+    }
+  },
+  "chainlinkVRF": {
+    "version": "v2.5",
+    "coordinator": "0x3C0Ca683b403E37668AE3DC4FB62F4B29B6f7a3e",
+    "subscriptionId": "49130512167777098004519592693541429977179420141459329604059253338290818062746",
+    "keyHash": "0x8472ba59cf7134dfe321f4d61a430c4857e8b19cdd5230b09952a92671c24409",
+    "gasLane": "30 gwei",
+    "network": "arbitrum",
+    "funded": true,
+    "authorized_consumers": [
+      "0x4CC1b5e72b9a5A6D6cE2131b444bB483FA2815c8"
+    ]
+  },
+  "functionality": {
+    "crossChainVRF": {
+      "status": "OPERATIONAL",
+      "flow": "Sonic → LayerZero V2 → Arbitrum → Chainlink VRF v2.5 → Response",
+      "testTransaction": "0x3c05ed2a0cc86f3d655c11bce3ba78c754cf76b0357ee0ab0a..."
+    },
+    "localVRF": {
+      "status": "OPERATIONAL",
+      "flow": "Arbitrum → Chainlink VRF v2.5 → Response",
+      "network": "arbitrum"
+    },
+    "quoting": {
+      "status": "OPERATIONAL",
+      "functions": [
+        "quoteSimple()",
+        "quoteWithGas(uint32)"
+      ]
+    }
+  },
+  "usage": {
+    "scripts": {
+      "get_quotes": "npx hardhat run scripts/vrf-helper.ts --network sonic",
+      "test_system": "npx hardhat run scripts/test-vrf-system.ts --network sonic",
+      "make_request": "cast send 0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90 'requestRandomWordsSimple(uint32)' 30110 --value 0.21ether --rpc-url $RPC_URL_SONIC --private-key $PRIVATE_KEY --legacy"
+    },
+    "integration": {
+      "solidity_example": "IChainlinkVRFIntegratorV2_5(0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90).requestRandomWordsSimple{value: fee}(30110)",
+      "quote_first": "uint256 fee = IChainlinkVRFIntegratorV2_5(integrator).quoteSimple().nativeFee"
+    }
+  },
+  "security": {
+    "ownership": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+    "verification": {
+      "sonic_integrator": "https://sonicscan.org/address/0x4cc69c8fed6d340742a347905ac99ddd5b2b0a90",
+      "arbitrum_consumer": "https://arbiscan.io/address/0x4cc1b5e72b9a5a6d6ce2131b444bb483fa2815c8"
+    },
+    "audited": false,
+    "testnet_tested": false,
+    "mainnet_ready": true
+  },
+  "maintenance": {
+    "monitoring": [
+      "LayerZero V2 fee fluctuations",
+      "Chainlink VRF subscription balance",
+      "Gas price impacts on cross-chain costs"
+    ],
+    "updates_needed": [
+      "None - system fully operational"
+    ]
+  }
+}

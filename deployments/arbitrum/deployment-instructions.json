@@ -1,0 +1,16 @@
+{
+  "contractName": "OmniDragonRegistry",
+  "constructorParams": [
+    "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F"
+  ],
+  "network": "arbitrum",
+  "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+  "timestamp": 1754251866089,
+  "next_steps": [
+    "1. Compile the contract using: npx hardhat compile",
+    "2. Deploy using: npx hardhat run scripts/deploy-registry.js --network arbitrum",
+    "3. Configure LayerZero endpoints",
+    "4. Set wrapped native tokens",
+    "5. Configure cross-chain VRF"
+  ]
+}
