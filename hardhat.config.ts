@@ -39,7 +39,7 @@ const config: HardhatUserConfig = {
         },
         avalanche: {
             eid: EndpointId.AVALANCHE_V2_MAINNET,
-            url: process.env.RPC_URL_AVALANCHE || '',
+            url: process.env.RPC_URL_AVAX || '',
             accounts: [process.env.PRIVATE_KEY!],
         },
         base: {

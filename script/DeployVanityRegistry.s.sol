@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "../contracts/core/config/OmniDragonRegistry.sol";
 
 contract DeployVanityRegistry is Script {
     // PERFECT VANITY ADDRESS: 0x69...0777 (using exact factory bytecode hash)
-    bytes32 constant VANITY_SALT = 0x7964330eb1b5c438565f9feedfff7e8420d740e9876b35fe9b99c37547ba1cec;
-    address constant EXPECTED_ADDRESS = 0x69D485e1c69e2fB0B9Be0b800427c69D51d30777;
+    bytes32 constant VANITY_SALT = 0x739045e5616b1e08a77452813c381b9669fc1332384606e22d1f02e3a229563d;
+    address constant EXPECTED_ADDRESS = 0x6949936442425f4137807Ac5d269e6Ef66d50777;
     
     // Create2Factory with Ownership (renamed to avoid conflict with forge-std)
     address constant OMNI_CREATE2_FACTORY = 0xAA28020DDA6b954D16208eccF873D79AC6533833;

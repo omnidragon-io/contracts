@@ -1,0 +1,261 @@
+{
+  "contractName": "OmniDragonRegistry",
+  "vanityAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+  "deploymentSalt": "0x739045e5616b1e08a77452813c381b9669fc1332384606e22d1f02e3a229563d",
+  "create2Factory": "0xAA28020DDA6b954D16208eccF873D79AC6533833",
+  "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+  "bytecodeHash": "0x8c3396c919a09a9bdeaa7a886553b7a7b9a3f640a609762f31bbd6b55bbaec05",
+  "deploymentDate": "2025-08-06",
+  "patternVerification": {
+    "prefix": "0x69",
+    "suffix": "0777",
+    "verified": true
+  },
+  "deployments": {
+    "sonic": {
+      "chainId": 146,
+      "chainName": "Sonic",
+      "networkName": "sonic",
+      "status": "deployed",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/sonic?auth=p886of4gitu82",
+      "contractAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+      "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+      "deploymentNotes": "Deployed successfully, post-deployment verification may have had issues"
+    },
+    "arbitrum": {
+      "chainId": 42161,
+      "chainName": "Arbitrum One",
+      "networkName": "arbitrum",
+      "status": "deployed",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/arbitrum?auth=p886of4gitu82",
+      "contractAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+      "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+      "transactionHash": "0xe97bc423e573a01e3765d97837bfee15dd2acd52eedbfa26adcadb96a6124946",
+      "blockNumber": 365629022,
+      "gasUsed": 3496484,
+      "gasCost": "0.00003496484 ETH",
+      "gasPrice": "0.01 gwei",
+      "deploymentNotes": "Full deployment and verification successful"
+    },
+    "ethereum": {
+      "chainId": 1,
+      "chainName": "Ethereum Mainnet",
+      "networkName": "mainnet",
+      "status": "deployed",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/ethereum?auth=p886of4gitu82",
+      "contractAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+      "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+      "transactionHash": "0x4afa18ee2282a48e35c6504036bba1ca7c3f5134ed16d6bc964f8eef012738f9",
+      "blockNumber": 23083353,
+      "gasUsed": 3211455,
+      "gasCost": "0.003222934066500915 ETH",
+      "gasPrice": "1.003574413 gwei",
+      "deploymentNotes": "Full deployment and verification successful"
+    },
+    "base": {
+      "chainId": 8453,
+      "chainName": "Base",
+      "networkName": "base",
+      "status": "deployed",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/base?auth=p886of4gitu82",
+      "contractAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+      "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+      "transactionHash": "0x62b4fe25e06b87b8bd4d86f333ebafa3b01bf681e457f40570cfca60731bd4be",
+      "blockNumber": 33854989,
+      "gasUsed": 3228555,
+      "gasCost": "0.0000164485191585 ETH",
+      "gasPrice": "0.0050947 gwei",
+      "deploymentNotes": "Full deployment and verification successful"
+    },
+    "avalanche": {
+      "chainId": 43114,
+      "chainName": "Avalanche C-Chain",
+      "networkName": "avalanche",
+      "status": "deployed",
+      "rpcUrl": "https://api.avax.network/ext/bc/C/rpc",
+      "contractAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+      "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+      "deploymentNotes": "Full deployment and verification successful"
+    },
+    "bsc": {
+      "chainId": 56,
+      "chainName": "BNB Smart Chain",
+      "networkName": "bsc",
+      "status": "pending",
+      "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/bsc?auth=p886of4gitu82",
+      "contractAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
+      "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+      "deploymentNotes": "Deployment in progress"
+    }
+  },
+  "layerZeroConfiguration": {
+    "sonic": {
+      "endpointId": 30332,
+      "endpoint": "0x6F475642a6e85809B1c36Fa62763669b1b48DD5B",
+      "sendUln": "0xC39161c743D0307EB9BCc9FEF03eeb9Dc4802de7",
+      "receiveUln": "0xe1844c5D63a9543023008D332Bd3d2e6f1FE1043"
+    },
+    "arbitrum": {
+      "endpointId": 30110,
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+      "sendUln": "0x975bcD720be66659e3EB3C0e4F1866a3020E493A"
+    }
+  },
+  "contractABI": [
+    {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "_initialOwner",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "owner",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getCurrentChainId",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "registerChain",
+      "inputs": [
+        {
+          "name": "_chainId",
+          "type": "uint16",
+          "internalType": "uint16"
+        },
+        {
+          "name": "_chainName",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "_wrappedNativeToken",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_uniswapV2Router",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_uniswapV2Factory",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_isActive",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "getChainConfig",
+      "inputs": [
+        {
+          "name": "_chainId",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "tuple",
+          "internalType": "struct IOmniDragonRegistry.ChainConfig",
+          "components": [
+            {
+              "name": "chainId",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "chainName",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "wrappedNativeToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "wrappedNativeSymbol",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "uniswapV2Router",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "uniswapV2Factory",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "isActive",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    }
+  ],
+  "deploymentSummary": {
+    "totalChains": 6,
+    "successfulDeployments": 5,
+    "pendingDeployments": 1,
+    "totalGasCostETH": "0.0059838689",
+    "averageGasUsed": 3481573,
+    "deterministic": true,
+    "vanityPattern": "0x69...0777",
+    "multiChainReady": true
+  },
+  "nextSteps": [
+    "Complete BSC deployment",
+    "Configure LayerZero V2 endpoints on all chains",
+    "Set up cross-chain communication pathways",
+    "Deploy omniDRAGON tokens using registry",
+    "Configure oracle network integration",
+    "Set up multi-chain governance"
+  ],
+  "verification": {
+    "allChainsUseSameAddress": true,
+    "patternMatches": true,
+    "ownerConsistent": true,
+    "create2Deterministic": true
+  }
+}

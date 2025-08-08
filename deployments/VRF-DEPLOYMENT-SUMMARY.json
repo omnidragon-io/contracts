@@ -14,15 +14,14 @@
       "blockExplorer": "https://sonicscan.org",
       "contracts": {
         "ChainlinkVRFIntegratorV2_5": {
-          "address": "0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90",
+          "address": "0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5",
           "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
-          "transactionHash": "0x05fbbfe5e66cac235aeead9c2b60c1d508ab8ba1cfd1ad0fe6eaebe804df8bf4",
-          "blockNumber": 41817391,
+          "deploymentType": "CREATE2",
           "verified": true,
-          "explorerUrl": "https://sonicscan.org/address/0x4cc69c8fed6d340742a347905ac99ddd5b2b0a90"
+          "explorerUrl": "https://sonicscan.org/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5"
         },
         "OmniDragonRegistry": {
-          "address": "0x69D485e1c69e2fB0B9Be0b800427c69D51d30777",
+          "address": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
           "deploymentType": "CREATE2",
           "vanityPattern": "0x69...0777"
         }
@@ -34,16 +33,23 @@
       "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/arbitrum?auth=p886of4gitu82",
       "blockExplorer": "https://arbiscan.io",
       "contracts": {
-        "OmniDragonVRFConsumerV2_5": {
-          "address": "0x4CC1b5e72b9a5A6D6cE2131b444bB483FA2815c8",
+        "ChainlinkVRFIntegratorV2_5": {
+          "address": "0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5",
           "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
-          "transactionHash": "0xa5ba81a7be169899a4f034156b6a8557a364a8069ecdcc40bf0b7910f16b94b2",
-          "blockNumber": 365434678,
+          "deploymentType": "CREATE2",
           "verified": true,
-          "explorerUrl": "https://arbiscan.io/address/0x4cc1b5e72b9a5a6d6ce2131b444bb483fa2815c8"
+          "explorerUrl": "https://arbiscan.io/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5"
+        },
+        "OmniDragonVRFConsumerV2_5": {
+          "address": "0x697a9d438a5b61ea75aa823f98a85efb70fd23d5",
+          "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+          "transactionHash": "0xdcbb1d259680a0ef7b0c9bb606a24502bf600320c2a2e693ef5b9dbd62212f90",
+          "blockNumber": 365508952,
+          "verified": true,
+          "explorerUrl": "https://arbiscan.io/address/0x697a9d438a5b61ea75aa823f98a85efb70fd23d5"
         },
         "OmniDragonRegistry": {
-          "address": "0x69D485e1c69e2fB0B9Be0b800427c69D51d30777",
+          "address": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
           "deploymentType": "CREATE2",
           "vanityPattern": "0x69...0777"
         }
@@ -88,7 +94,7 @@
     "network": "arbitrum",
     "funded": true,
     "authorized_consumers": [
-      "0x4CC1b5e72b9a5A6D6cE2131b444bB483FA2815c8"
+      "0x697a9d438a5b61ea75aa823f98a85efb70fd23d5"
     ]
   },
   "functionality": {
@@ -114,18 +120,19 @@
     "scripts": {
       "get_quotes": "npx hardhat run scripts/vrf-helper.ts --network sonic",
       "test_system": "npx hardhat run scripts/test-vrf-system.ts --network sonic",
-      "make_request": "cast send 0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90 'requestRandomWordsSimple(uint32)' 30110 --value 0.21ether --rpc-url $RPC_URL_SONIC --private-key $PRIVATE_KEY --legacy"
+      "make_request": "cast send 0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5 'requestRandomWordsSimple(uint32)' 30110 --value 0.21ether --rpc-url $RPC_URL_SONIC --private-key $PRIVATE_KEY --legacy"
     },
     "integration": {
-      "solidity_example": "IChainlinkVRFIntegratorV2_5(0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90).requestRandomWordsSimple{value: fee}(30110)",
+      "solidity_example": "IChainlinkVRFIntegratorV2_5(0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5).requestRandomWordsSimple{value: fee}(30110)",
       "quote_first": "uint256 fee = IChainlinkVRFIntegratorV2_5(integrator).quoteSimple().nativeFee"
     }
   },
   "security": {
     "ownership": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
     "verification": {
-      "sonic_integrator": "https://sonicscan.org/address/0x4cc69c8fed6d340742a347905ac99ddd5b2b0a90",
-      "arbitrum_consumer": "https://arbiscan.io/address/0x4cc1b5e72b9a5a6d6ce2131b444bb483fa2815c8"
+      "sonic_integrator": "https://sonicscan.org/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5",
+      "arbitrum_integrator": "https://arbiscan.io/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5",
+      "arbitrum_consumer": "https://arbiscan.io/address/0x697a9d438a5b61ea75aa823f98a85efb70fd23d5"
     },
     "audited": false,
     "testnet_tested": false,

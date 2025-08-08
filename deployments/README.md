@@ -1,17 +1,83 @@
-# OmniDragon VRF Deployments
+# OmniDragon Deployments
 
-This folder contains deployment information for the OmniDragon cross-chain VRF system.
+This folder contains deployment information for the OmniDragon OFT token and cross-chain VRF system.
+
+## Quick Links
+- Frontend guide (bridging + LayerZero OFT API): [FRONTEND_INTEGRATION.md](../docs/FRONTEND_INTEGRATION.md)
+
+## 🐉 OmniDRAGON (OFT) – Token
+
+- Name: Dragon
+- Symbol: DRAGON
+- Address (same on all chains): `0x69821FFA2312253209FdabB3D84f034B697E7777`
+- Registry (same on all chains): `0x6949936442425f4137807Ac5d269e6Ef66d50777`
+- Standard: ERC-20 + LayerZero V2 OFT
+
+### LayerZero V2 EIDs
+
+| Chain | EID |
+|------|-----|
+| Ethereum | 30101 |
+| Arbitrum | 30110 |
+| Avalanche | 30106 |
+| Base | 30184 |
+| Sonic | 30332 |
+
+### Core Dependencies (for fee distribution)
+
+| Chain | DragonJackpotVault | veDRAGONRevenueDistributor |
+|------|---------------------|----------------------------|
+| Sonic | `0x09a5d89539fdd07f779a3ddc3a985d0a757b4d7b` | `0x4b0b4a25844744bbb23424533ca5a7f6dfaaba57` |
+| Arbitrum | `0x21f2c71190330d8e6ececb411f05195874274dc9` | `0x8b89562e46502fc31addcace5b99367083c5c0c1` |
+
+### Bridge DRAGON (Foundry cast, correct OFT ABI)
+
+1) Quote fee (example Sonic → Arbitrum 69,420 DRAGON):
+
+```bash
+TOKEN=0x69821FFA2312253209FdabB3D84f034B697E7777
+TO=0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F
+TO_B32=0x000000000000000000000000ddd0050d1e084dfc72d5d06447cc10bcd3fef60f
+DST=30110 # Arbitrum EID
+AMOUNT=$(cast --to-wei 69420 ether)
+QUOTE=$(cast call $TOKEN \
+  "quoteSend((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),bool)" \
+  "($DST,$TO_B32,$AMOUNT,$AMOUNT,0x,0x,0x)" false \
+  --rpc-url $RPC_URL_SONIC)
+# nativeFee is the first 32 bytes
+NATIVE_FEE_HEX=0x$(echo $QUOTE | sed 's/^0x//' | cut -c1-64)
+NATIVE_FEE=$(cast to-dec $NATIVE_FEE_HEX)
+echo "nativeFee: $NATIVE_FEE"
+```
+
+2) Send with MessagingFee struct:
+
+```bash
+cast send $TOKEN \
+  "send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)" \
+  "($DST,$TO_B32,$AMOUNT,$AMOUNT,0x,0x,0x)" "($NATIVE_FEE,0)" $TO \
+  --value $NATIVE_FEE \
+  --rpc-url $RPC_URL_SONIC \
+  --private-key $PRIVATE_KEY
+```
+
+Notes:
+- We removed enforced LZ receive gas; extraOptions can be empty (defaults apply).
+- If slippage reverts, set `minAmountLD` slightly lower than `amountLD`.
 
 ## 📋 Quick Reference
 
-### Contract Addresses
+### VRF Contract Addresses
 
 | Contract | Network | Address |
 |----------|---------|---------|
-| ChainlinkVRFIntegratorV2_5 | Sonic | `0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90` |
-| OmniDragonVRFConsumerV2_5 | Arbitrum | `0x4CC1b5e72b9a5A6D6cE2131b444bB483FA2815c8` |
-| OmniDragonRegistry | Sonic | `0x69D485e1c69e2fB0B9Be0b800427c69D51d30777` |
-| OmniDragonRegistry | Arbitrum | `0x69D485e1c69e2fB0B9Be0b800427c69D51d30777` |
+| ChainlinkVRFIntegratorV2_5 | Sonic | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
+| ChainlinkVRFIntegratorV2_5 | Arbitrum | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
+| ChainlinkVRFIntegratorV2_5 | Ethereum | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
+| ChainlinkVRFIntegratorV2_5 | BSC | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
+| ChainlinkVRFIntegratorV2_5 | Avalanche | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
+| OmniDragonVRFConsumerV2_5 | Arbitrum | `0x697a9d438a5b61ea75aa823f98a85efb70fd23d5` |
+| OmniDragonRegistry | All Chains | `0x6949936442425f4137807Ac5d269e6Ef66d50777` |
 
 ### System Status: ✅ FULLY OPERATIONAL
 
@@ -46,7 +112,7 @@ npx hardhat run scripts/test-vrf-system.ts --network sonic
 ### Make VRF Request
 ```bash
 # Get quote first, then use the fee amount
-cast send 0x4cc69C8FEd6d340742a347905ac99DdD5b2B0A90 \
+cast send 0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5 \
   "requestRandomWordsSimple(uint32)" 30110 \
   --value 0.21ether \
   --rpc-url $RPC_URL_SONIC \
@@ -91,8 +157,12 @@ Fees vary based on:
 ## 📊 Verification
 
 All contracts are verified on their respective block explorers:
-- [Sonic VRF Integrator](https://sonicscan.org/address/0x4cc69c8fed6d340742a347905ac99ddd5b2b0a90)
-- [Arbitrum VRF Consumer](https://arbiscan.io/address/0x4cc1b5e72b9a5a6d6ce2131b444bb483fa2815c8)
+- [Sonic VRF Integrator](https://sonicscan.org/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5)
+- [Arbitrum VRF Integrator](https://arbiscan.io/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5)
+- [Arbitrum VRF Consumer](https://arbiscan.io/address/0x697a9d438a5b61ea75aa823f98a85efb70fd23d5)
+- [Ethereum VRF Integrator](https://etherscan.io/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5)
+- [BSC VRF Integrator](https://bscscan.com/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5)
+- [Avalanche VRF Integrator](https://snowscan.xyz/address/0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5)
 
 ## 🛠️ Integration
 
@@ -110,6 +180,9 @@ bytes32 requestId = integrator.requestRandomWordsSimple{value: fee}(30110);
 
 ### Frontend Integration
 ```typescript
+// Same address on all chains
+const VRF_INTEGRATOR = "0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5";
+
 const quote = await vrfIntegrator.quoteSimple();
 const fee = quote[0]; // Native fee in wei
 const tx = await vrfIntegrator.requestRandomWordsSimple(30110, { value: fee });

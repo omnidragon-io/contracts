@@ -74,8 +74,8 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     DRAGON,
     LP_TOKEN
   }
-  TokenType public immutable tokenType;
-  IERC20 public immutable lockedToken; // The token being locked (DRAGON or LP)
+  TokenType public tokenType;
+  IERC20 public lockedToken; // The token being locked (DRAGON or LP)
   bool public initialized; // Initialization flag
 
   // === State Variables ===
@@ -132,23 +132,11 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
    * @param _symbol Token symbol
    */
   constructor(
-    address _token,
-    TokenType _tokenType,
     string memory _name,
     string memory _symbol
   ) ERC20(_name, _symbol) Ownable(msg.sender) {
-    if (_token == address(0)) revert ZeroAddress();
-
-    // Set immutable variable unconditionally
-    lockedToken = IERC20(_token);
-    tokenType = _tokenType;
-
-    if (_tokenType == TokenType.DRAGON) {
-      initialized = true;
-      emit Initialized(_token, _tokenType);
-    } else {
-      initialized = false;
-    }
+    // Deferred initialization for identical init code across chains.
+    initialized = false;
 
     // Initialize point history
     pointHistory[0] = Point({bias: 0, slope: 0, timestamp: block.timestamp});
@@ -167,11 +155,10 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     if (initialized) revert AlreadyInitialized();
     if (_token == address(0)) revert ZeroAddress();
 
-    // This is a hack to work around immutable variable limitations
-    // In practice, you'd deploy with the token address in constructor
+    // One-time initialization for vanity deployments
     require(address(lockedToken) == address(0), "Token already set");
-
-    // Note: tokenType is immutable and can only be set in constructor
+    lockedToken = IERC20(_token);
+    tokenType = _tokenType;
     initialized = true;
 
     emit Initialized(_token, _tokenType);

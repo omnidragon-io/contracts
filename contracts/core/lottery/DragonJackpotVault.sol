@@ -53,7 +53,8 @@ contract DragonJackpotVault is IDragonJackpotVault, Ownable, ReentrancyGuard {
    * @param _owner Owner address
    */
   constructor(address _wrappedNativeToken, address _owner) Ownable(_owner) {
-    if (_wrappedNativeToken == address(0)) revert DragonErrors.ZeroAddress();
+    // Allow placeholder (zero) for vanity CREATE2 deployments across chains.
+    // Runtime functions already enforce non-zero via DragonErrors.WrappedTokenNotSet().
     wrappedNativeToken = _wrappedNativeToken;
   }
 
