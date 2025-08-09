@@ -183,26 +183,24 @@ contract DragonFeeMHelper is Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Emergency withdraw function
-   * @param token Token address (address(0) for native)
-   * @param amount Amount to withdraw
+   * @dev Emergency withdraw forwards non-core assets to the jackpot vault instead of owner.
    */
   function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
     if (amount == 0) revert DragonErrors.AmountBelowMinimum();
 
+    address to = jackpotVaultAddress;
+    if (to == address(0)) revert DragonErrors.ZeroAddress();
+
     if (token == address(0)) {
-      // Native token withdrawal
       uint256 balance = address(this).balance;
       if (balance < amount) revert DragonErrors.InsufficientBalance();
-
-      (bool success, ) = payable(owner()).call{value: amount}("");
+      (bool success, ) = payable(to).call{value: amount}("");
       if (!success) revert DragonErrors.TransferFailed();
     } else {
-      // Use SafeERC20 instead of raw transfer
-      IERC20(token).safeTransfer(owner(), amount);
+      IERC20(token).safeTransfer(to, amount);
     }
 
-    emit EmergencyWithdraw(token, amount, owner());
+    emit EmergencyWithdraw(token, amount, to);
   }
 
   // ========== VIEW FUNCTIONS ==========

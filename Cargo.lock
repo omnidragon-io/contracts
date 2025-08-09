@@ -2030,6 +2030,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ethers",
+ "eyre",
  "hex",
  "rand 0.8.5",
  "rayon",

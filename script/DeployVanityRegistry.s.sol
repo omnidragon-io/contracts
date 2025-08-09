@@ -6,7 +6,8 @@ import "../contracts/core/config/OmniDragonRegistry.sol";
 
 contract DeployVanityRegistry is Script {
     // PERFECT VANITY ADDRESS: 0x69...0777 (using exact factory bytecode hash)
-    bytes32 constant VANITY_SALT = 0x739045e5616b1e08a77452813c381b9669fc1332384606e22d1f02e3a229563d;
+    // You can override the salt via env SALT_REGISTRY
+    bytes32 constant DEFAULT_SALT = 0x739045e5616b1e08a77452813c381b9669fc1332384606e22d1f02e3a229563d;
     address constant EXPECTED_ADDRESS = 0x6949936442425f4137807Ac5d269e6Ef66d50777;
     
     // Create2Factory with Ownership (renamed to avoid conflict with forge-std)
@@ -20,7 +21,8 @@ contract DeployVanityRegistry is Script {
         console.log("Deployer:", deployer);
         console.log("Chain ID:", block.chainid);
         console.log("Expected Address:", EXPECTED_ADDRESS);
-        console.log("Salt:", vm.toString(VANITY_SALT));
+        bytes32 salt = vm.envOr("SALT_REGISTRY", DEFAULT_SALT);
+        console.log("Salt:", vm.toString(salt));
         
         vm.startBroadcast(deployerPrivateKey);
         
@@ -32,7 +34,7 @@ contract DeployVanityRegistry is Script {
         
         // Calculate actual CREATE2 address using the factory
         address actualAddress = vm.computeCreate2Address(
-            VANITY_SALT,
+            salt,
             keccak256(bytecode),
             OMNI_CREATE2_FACTORY
         );
@@ -49,7 +51,7 @@ contract DeployVanityRegistry is Script {
         // Deploy using CREATE2FactoryWithOwnership with correct signature
         // Function signature: deploy(bytes memory bytecode, bytes32 salt, string memory contractType)
         (bool success, bytes memory returnData) = OMNI_CREATE2_FACTORY.call(
-            abi.encodeWithSignature("deploy(bytes,bytes32,string)", bytecode, VANITY_SALT, "OmniDragonRegistry")
+            abi.encodeWithSignature("deploy(bytes,bytes32,string)", bytecode, salt, "OmniDragonRegistry")
         );
         
         if (!success) {

@@ -1,7 +1,7 @@
 {
   "configurationName": "OmniDragon Registry Multi-Chain Configuration",
   "registryAddress": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
-  "configurationDate": "2025-08-06",
+  "configurationDate": "2025-08-08",
   "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
   "status": "completed",
   "totalChains": 6,
@@ -113,6 +113,25 @@
       "base <-> avalanche"
     ],
     "note": "All chains can communicate with each other via LayerZero V2"
+  },
+  "oracleRegistry": {
+    "priceOracles": {
+      "42161": "0x69aaB98503216E16EC72ac3F4B8dfc900cC27777",
+      "1": "0x69aaB98503216E16EC72ac3F4B8dfc900cC27777",
+      "8453": "0x69aaB98503216E16EC72ac3F4B8dfc900cC27777",
+      "43114": "0x69aaB98503216E16EC72ac3F4B8dfc900cC27777"
+    },
+    "primaryOracle": {
+      "address": "0x69773eC63Bf4b8892fDEa30D07c91E205866e777",
+      "chainEid": 30332
+    },
+    "lzReadChannels": {
+      "146": 30332,
+      "42161": 30110,
+      "1": 30101,
+      "8453": 30184,
+      "43114": 30106
+    }
   },
   
   "registeredChains": {

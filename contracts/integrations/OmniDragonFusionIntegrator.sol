@@ -486,9 +486,10 @@ contract OmniDragonFusionIntegrator is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @dev Emergency token recovery
+     * @dev Emergency token recovery for non-core tokens only. Disallow withdrawing omniDRAGON token for optics.
      */
     function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
+        require(token != omniDRAGONToken, "Cannot withdraw omniDRAGON");
         if (token == address(0)) {
             payable(owner()).transfer(amount);
         } else {

@@ -18,7 +18,7 @@ interface IWrappedNativeToken {
 import {DragonErrors} from "../../libraries/DragonErrors.sol";
 
 /**
- * @title DragonJackpotVault
+ * @title OmniDragonJackpotVault
  * @author 0xakita.eth
  * @dev Jackpot vault with lottery mechanics and fee management
  *
@@ -28,7 +28,7 @@ import {DragonErrors} from "../../libraries/DragonErrors.sol";
  * https://x.com/sonicreddragon
  * https://t.me/sonicreddragon
  */
-contract DragonJackpotVault is IDragonJackpotVault, Ownable, ReentrancyGuard {
+contract OmniDragonJackpotVault is IDragonJackpotVault, Ownable, ReentrancyGuard {
   using SafeERC20 for IERC20;
 
   // Constants for payout logic
@@ -56,6 +56,16 @@ contract DragonJackpotVault is IDragonJackpotVault, Ownable, ReentrancyGuard {
     // Allow placeholder (zero) for vanity CREATE2 deployments across chains.
     // Runtime functions already enforce non-zero via DragonErrors.WrappedTokenNotSet().
     wrappedNativeToken = _wrappedNativeToken;
+  }
+
+  /**
+   * @dev Post-deploy initializer to set wrapped native token once.
+   */
+  function initializeWrappedNativeToken(address _wrappedNativeToken) external onlyOwner {
+    if (wrappedNativeToken != address(0)) revert DragonErrors.UnauthorizedCaller();
+    if (_wrappedNativeToken == address(0)) revert DragonErrors.ZeroAddress();
+    wrappedNativeToken = _wrappedNativeToken;
+    emit WrappedNativeTokenSet(address(0), _wrappedNativeToken);
   }
 
   /**
@@ -185,20 +195,20 @@ contract DragonJackpotVault is IDragonJackpotVault, Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Emergency withdraw function for any stuck tokens
-   * @param token Token address (address(0) for native)
-   * @param amount Amount to withdraw
+   * @dev Emergency withdraw for non-core tokens only. Core token is `wrappedNativeToken`.
+   *      Native balance is auto-wrapped in receive(); withdrawing native would drain core funds, so disallowed.
    */
   function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
     if (amount == 0) revert DragonErrors.ZeroAmount();
 
+    // Disallow withdrawing core jackpot asset
+    if (token == wrappedNativeToken) revert DragonErrors.UnauthorizedCaller();
+
     if (token == address(0)) {
-      // Native token withdrawal
-      if (address(this).balance < amount) revert DragonErrors.InsufficientBalance();
-      (bool success, ) = payable(owner()).call{value: amount}("");
-      if (!success) revert DragonErrors.TransferFailed();
+      // Native should not be held materially (receive() auto-wraps). Block native withdraw to avoid optics issues.
+      revert DragonErrors.UnauthorizedCaller();
     } else {
-      // ERC20 token withdrawal
+      // Withdraw only non-core ERC20s mistakenly sent to contract
       IERC20(token).safeTransfer(owner(), amount);
     }
 
@@ -313,3 +323,5 @@ contract DragonJackpotVault is IDragonJackpotVault, Ownable, ReentrancyGuard {
     require(_success, "FeeM registration failed");
   }
 }
+
+

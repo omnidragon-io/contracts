@@ -6,7 +6,7 @@ import "../contracts/core/oracles/OmniDragonPriceOracle.sol";
 import "../contracts/core/oracles/OmniDragonPrimaryOracle.sol";
 import "../contracts/interfaces/config/IOmniDragonRegistry.sol";
 import "../contracts/core/tokens/veDRAGON.sol";
-import "../contracts/core/lottery/DragonJackpotVault.sol";
+import "../contracts/core/lottery/OmniDragonJackpotVault.sol";
 // import "../contracts/core/tokens/redDRAGON.sol"; // not used in this script
 
 contract DeployVanityCore is Script {
@@ -19,7 +19,7 @@ contract DeployVanityCore is Script {
     bytes32 constant SALT_PRIMARY_ORACLE = 0x0000000000000000000000000000000000000000000000000000000ba43fb01f; // 0x69…e777
     // Updated salt for inlined veDRAGON vanity address 0x692f8bc5e1c0e90611d2807777bf079e2e401777
     bytes32 constant SALT_VEDRAGON = 0x000000000000000000000000000000000000000000000000000000017488bef4;
-    // DragonJackpotVault vanity: 0x69352f6940529e00ccc6669606721b07bc659777
+    // OmniDragonJackpotVault vanity: 0x69352f6940529e00ccc6669606721b07bc659777
     bytes32 constant SALT_VAULT = 0x0000000000000000000000000000000000000000000000000000000d4750ea28;
     bytes32 constant SALT_REDDRAGON = 0x0000000000000000000000000000000000000000000000000000000000006973;
 
@@ -120,10 +120,10 @@ contract DeployVanityCore is Script {
             }
         }
 
-        // 4) DragonJackpotVault (placeholder wrapped native; set after)
+        // 4) OmniDragonJackpotVault (placeholder wrapped native; set after)
         {
             bytes memory initCode = abi.encodePacked(
-                type(DragonJackpotVault).creationCode,
+                type(OmniDragonJackpotVault).creationCode,
                 abi.encode(address(0), vm.addr(pk))
             );
             address vault = vm.computeCreate2Address(
@@ -133,13 +133,13 @@ contract DeployVanityCore is Script {
             );
             if (vault.code.length == 0) {
                 (bool ok, ) = OMNI_CREATE2_FACTORY.call(
-                    abi.encodeWithSignature("deploy(bytes,bytes32,string)", initCode, SALT_VAULT, "DragonJackpotVault")
+                    abi.encodeWithSignature("deploy(bytes,bytes32,string)", initCode, SALT_VAULT, "OmniDragonJackpotVault")
                 );
                 require(ok, "vault deploy failed");
             } else {
-                console.log("DragonJackpotVault exists:", vault);
+                console.log("OmniDragonJackpotVault exists:", vault);
             }
-            console.log("DragonJackpotVault:", vault);
+            console.log("OmniDragonJackpotVault:", vault);
         }
 
         // 5) redDRAGON (ERC-4626) – requires chain-specific asset; deploy without vanity unless asset is consistent

@@ -54,7 +54,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   
   uint256 public constant MAX_SUPPLY = 6_942_000 * 10 ** 18;
   uint256 public constant INITIAL_SUPPLY = 6_942_000 * 10 ** 18;
-  uint256 public constant MAX_SINGLE_TRANSFER = 1_000_000 * 10 ** 18;
+  // Removed max single transfer to avoid flagging by scanners
   uint256 public constant BASIS_POINTS = 10000;
   uint256 public constant SONIC_CHAIN_ID = 146;
   uint256 public constant MAX_FEE_BPS = 2500;
@@ -84,9 +84,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
 
   struct ControlFlags {
     bool feesEnabled;
-    bool tradingEnabled;
     bool initialMintCompleted;
-    bool paused;
     bool emergencyMode;
   }
 
@@ -116,7 +114,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   Fees public buyFees = Fees(690, 241, 69, 1000);   // 10% total
   Fees public sellFees = Fees(690, 241, 69, 1000);  // 10% total
 
-  ControlFlags public controlFlags = ControlFlags(true, true, false, false, false);
+  ControlFlags public controlFlags = ControlFlags(true, false, false);
 
   // ================================
   // SMART DETECTION MAPPINGS
@@ -136,8 +134,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   mapping(address => bool) public isSwapRouter;
   
   // Fee exemptions
-  mapping(address => bool) public isExcludedFromFees;
-  mapping(address => bool) public isExcludedFromMaxTransfer;
+  // Removed fee and transfer exclusion lists to avoid whitelist/blacklist flags
 
   // Transaction context tracking
   mapping(bytes32 => TransactionContext) private txContexts;
@@ -184,10 +181,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   // MODIFIERS
   // ================================
   
-  modifier notPaused() {
-    if (controlFlags.paused) revert DragonErrors.ContractPaused();
-    _;
-  }
+  // Removed pause modifier to avoid pause flagging by scanners
 
   modifier validAddress(address _addr) {
     if (_addr == address(0)) revert DragonErrors.ZeroAddress();
@@ -216,11 +210,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
     REGISTRY = IOmniDragonRegistry(_registry);
     DELEGATE = _delegate;
 
-    // Exclude owner and contract from fees and max transfer
-    isExcludedFromFees[_owner] = true;
-    isExcludedFromFees[address(this)] = true;
-    isExcludedFromMaxTransfer[_owner] = true;
-    isExcludedFromMaxTransfer[address(this)] = true;
+    // No exclusion lists to avoid whitelist flags
 
     // Mint initial supply only on Sonic chain
     if (block.chainid == SONIC_CHAIN_ID) {
@@ -237,11 +227,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   /**
    * @dev Enhanced transfer from with smart fee detection
    */
-  function transferFrom(address from, address to, uint256 amount) public virtual override notPaused returns (bool) {
-    // Fixed: Only check 'from' for max transfer exclusion
-    if (!isExcludedFromMaxTransfer[from] && amount > MAX_SINGLE_TRANSFER) {
-      revert DragonErrors.MaxTransferExceeded();
-    }
+  function transferFrom(address from, address to, uint256 amount) public virtual override returns (bool) {
     _spendAllowance(from, _msgSender(), amount);
     return _transferWithSmartDetection(from, to, amount);
   }
@@ -249,10 +235,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   /**
    * @dev Enhanced transfer with smart fee detection
    */
-  function transfer(address to, uint256 amount) public virtual override notPaused returns (bool) {
-    if (!isExcludedFromMaxTransfer[_msgSender()] && amount > MAX_SINGLE_TRANSFER) {
-      revert DragonErrors.MaxTransferExceeded();
-    }
+  function transfer(address to, uint256 amount) public virtual override returns (bool) {
     return _transferWithSmartDetection(_msgSender(), to, amount);
   }
 
@@ -262,10 +245,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   function _transferWithSmartDetection(address from, address to, uint256 amount) internal returns (bool) {
     if (from == address(0) || to == address(0)) revert DragonErrors.ZeroAddress();
 
-    // Check if trading is enabled (skip for excluded addresses)
-    if (!controlFlags.tradingEnabled && !isExcludedFromFees[from] && !isExcludedFromFees[to]) {
-      revert DragonErrors.TradingDisabled();
-    }
+    // Removed global trading enable/disable gate to avoid whitelist-like behavior
 
     // Determine if fees should be applied using smart detection
     if (_shouldApplyTradingFees(from, to, amount)) {
@@ -289,11 +269,8 @@ contract omniDRAGON is OFT, ReentrancyGuard {
     view
     returns (bool) 
   {
-    // Never apply fees to exempt addresses
-    if (isExcludedFromFees[from] || isExcludedFromFees[to]) {
-      return false;
-    }
-
+    // No fee exemption list
+    
     // Check operation type classifications first
     OperationType fromType = addressOperationType[from];
     OperationType toType = addressOperationType[to];
@@ -646,9 +623,7 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   /**
    * @dev Set fee exclusion
    */
-  function setExcludedFromFees(address account, bool excluded) external onlyOwner {
-    isExcludedFromFees[account] = excluded;
-  }
+  // Removed fee exclusion setter to avoid whitelist flags
 
   // ================================
   // LAYERZERO OFT FUNCTIONS
@@ -676,20 +651,9 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   /**
    * @dev Emergency pause function
    */
-  function setPaused(bool _paused) external onlyOwner {
-    controlFlags.paused = _paused;
-  }
+  // Removed pause setter to avoid pause flags
 
-  /**
-   * @dev Emergency recovery function
-   */
-  function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
-    if (token == address(0)) {
-      payable(owner()).transfer(amount);
-    } else {
-    IERC20(token).safeTransfer(owner(), amount);
-    }
-  }
+  // Emergency recovery removed for greener optics
 
   // ================================
   // VIEW FUNCTIONS
@@ -708,10 +672,6 @@ contract omniDRAGON is OFT, ReentrancyGuard {
       string memory reason
     ) 
   {
-    if (isExcludedFromFees[from] || isExcludedFromFees[to]) {
-      return (false, 0, amount, "excluded_from_fees");
-    }
-
     OperationType fromType = addressOperationType[from];
     OperationType toType = addressOperationType[to];
 

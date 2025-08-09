@@ -11,6 +11,7 @@ sha3 = "0.10"
 rand = "0.8"
 clap = { version = "4.0", features = ["derive"] }
 rayon = "1.7"
+eyre = "0.6"
 
 [[bin]]
 name = "vanity-generator"
@@ -23,3 +24,7 @@ path = "src/vrf_vanity.rs"
 [[bin]]
 name = "vrf-integrator-vanity"
 path = "src/vrf_integrator_vanity.rs"
+
+[[bin]]
+name = "deploy-vedragon"
+path = "src/deploy_vedragon.rs"

@@ -1,5 +1,5 @@
 [profile.default]
-solc-version = '0.8.20'
+solc-version = '0.8.19'
 src = 'contracts'
 out = 'out'
 test = 'test/foundry'

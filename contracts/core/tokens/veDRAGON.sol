@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IveDRAGON} from "../../interfaces/tokens/IveDRAGON.sol";
 import "../../libraries/core/DragonDateTimeLib.sol";
-import "../governance/voting/VotingPowerCalculator.sol";
 
 /**
  * @title veDRAGON
@@ -50,6 +49,7 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     uint256 bias; // Voting power at the time of recording
     uint256 slope; // How fast the voting power is decreasing over time
     uint256 timestamp; // Time point was recorded
+    uint256 blk; // Block number at time of recording (for MiniMe-style queries)
   }
 
   struct Lock {
@@ -64,6 +64,7 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
   uint256 private constant MAX_LOCK_TIME = 4 * 365 * 86400; // 4 years in seconds
   uint256 private constant MIN_LOCK_TIME = 7 * 86400; // 1 week in seconds
   uint256 private constant PRECISION = 1e18; // Precision for calculations
+  uint256 private constant BPS_DENOMINATOR = 10000; // Basis points denominator (100% = 10000)
 
   // Legacy constants for backward compatibility
   uint256 public constant MAX_LOCK_DURATION = MAX_LOCK_TIME;
@@ -92,6 +93,103 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
   mapping(address => mapping(uint256 => Point)) public userPointHistory;
   mapping(uint256 => Point) public pointHistory;
   uint256 public epoch;
+
+  // Scheduled changes to the global slope at week boundaries (Curve-style)
+  // Key: week-aligned timestamp when a lock ends; Value: signed slope delta applied at that time
+  mapping(uint256 => int256) public slopeChanges;
+
+  // Per-user MiniMe compatibility: query balance at a past block using stored points
+  // Note: For full Curve parity, a per-user slope change schedule can be added if needed
+
+  function _alignToWeek(uint256 t) internal pure returns (uint256) {
+    return (t / WEEK) * WEEK;
+  }
+
+  function _supplyAt(Point memory pt, uint256 t) internal view returns (uint256) {
+    if (t < pt.timestamp) return pt.bias;
+    uint256 ts = pt.timestamp;
+    uint256 slope = pt.slope;
+    uint256 bias = pt.bias;
+    while (ts < t && bias > 0) {
+      uint256 nextTs = _alignToWeek(ts + WEEK);
+      if (nextTs > t) nextTs = t;
+      uint256 dt = nextTs - ts;
+      if (dt > 0) {
+        uint256 decay = slope * dt;
+        if (bias <= decay) return 0;
+        bias -= decay;
+        ts = nextTs;
+      }
+      int256 dSlope = slopeChanges[ts];
+      if (dSlope != 0) {
+        if (dSlope < 0) {
+          uint256 sub = uint256(-dSlope);
+          slope = sub > slope ? 0 : slope - sub;
+        } else {
+          slope += uint256(dSlope);
+        }
+      }
+    }
+    return bias;
+  }
+
+  function _findGlobalPointAtBlock(uint256 _block) internal view returns (Point memory lower, Point memory upper) {
+    uint256 l = 0;
+    uint256 r = epoch;
+    while (l < r) {
+      uint256 m = (l + r + 1) / 2;
+      if (pointHistory[m].blk <= _block) l = m; else r = m - 1;
+    }
+    lower = pointHistory[l];
+    if (l < epoch) upper = pointHistory[l + 1]; else upper = lower;
+  }
+
+  function totalSupply() public view override returns (uint256) {
+    return _supplyAt(pointHistory[epoch], block.timestamp);
+  }
+
+  function totalSupplyAt(uint256 _block) external view returns (uint256) {
+    (Point memory lower, Point memory upper) = _findGlobalPointAtBlock(_block);
+    uint256 t = lower.timestamp;
+    if (upper.blk > lower.blk) {
+      uint256 dtBlock = _block - lower.blk;
+      uint256 dBlk = upper.blk - lower.blk;
+      uint256 dt = upper.timestamp > lower.timestamp ? (upper.timestamp - lower.timestamp) : 0;
+      if (dBlk > 0 && dt > 0) {
+        t = lower.timestamp + (dt * dtBlock) / dBlk;
+      }
+    }
+    return _supplyAt(lower, t);
+  }
+
+  function balanceOfAt(address user, uint256 _block) external view returns (uint256) {
+    uint256 uEpoch = userPointEpoch[user];
+    if (uEpoch == 0) return 0;
+    // Binary search user points
+    uint256 l = 0;
+    uint256 r = uEpoch;
+    while (l < r) {
+      uint256 m = (l + r + 1) / 2;
+      if (userPointHistory[user][m].blk <= _block) l = m; else r = m - 1;
+    }
+    Point memory up = userPointHistory[user][l];
+    if (up.blk == 0 && l == 0) return 0;
+    (Point memory gl, Point memory gu) = _findGlobalPointAtBlock(_block);
+    uint256 t = up.timestamp;
+    if (gu.blk > gl.blk) {
+      uint256 dtBlock = _block - gl.blk;
+      uint256 dBlk = gu.blk - gl.blk;
+      uint256 dt = gu.timestamp > gl.timestamp ? (gu.timestamp - gl.timestamp) : 0;
+      if (dBlk > 0 && dt > 0) {
+        uint256 est = gl.timestamp + (dt * dtBlock) / dBlk;
+        if (est > up.timestamp) t = est; else t = up.timestamp;
+      }
+    }
+    if (t <= up.timestamp) return up.bias;
+    uint256 dt2 = t - up.timestamp;
+    uint256 decay = up.slope * dt2;
+    return up.bias > decay ? (up.bias - decay) : 0;
+  }
 
   // Voting power configuration
   uint256 public maxVP = 15000; // Maximum voting power multiplier (1.5x) in basis points
@@ -126,8 +224,6 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
 
   /**
    * @notice Constructor
-   * @param _token Address of the token to lock (DRAGON or LP token)
-   * @param _tokenType Type of token (DRAGON or LP_TOKEN)
    * @param _name Token name
    * @param _symbol Token symbol
    */
@@ -139,7 +235,7 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     initialized = false;
 
     // Initialize point history
-    pointHistory[0] = Point({bias: 0, slope: 0, timestamp: block.timestamp});
+    pointHistory[0] = Point({bias: 0, slope: 0, timestamp: block.timestamp, blk: block.number});
     epoch = 0;
 
     // Pre-calculate maximum boost for gas optimization
@@ -193,8 +289,10 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     if (amount == 0 || duration < MIN_LOCK_TIME) return 0;
     if (duration > MAX_LOCK_TIME) duration = MAX_LOCK_TIME;
 
-    // Use VotingPowerCalculator with LINEAR method for gas efficiency and predictability
-    return VotingPowerCalculator.calculateVotingPower(amount, duration, VotingPowerCalculator.VotingPowerMethod.LINEAR);
+    // Linear scaling with lock time and up to 1.5x additional boost (2.5x total)
+    uint256 timeRatio = (duration * PRECISION) / MAX_LOCK_TIME;
+    uint256 boost = BPS_DENOMINATOR + ((15000 * timeRatio) / PRECISION);
+    return (amount * boost) / BPS_DENOMINATOR;
   }
 
   /**
@@ -408,15 +506,22 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     userPointHistory[msg.sender][userEpoch] = Point({
       bias: votingPowerAmount,
       slope: votingPowerAmount / (unlockTime - block.timestamp),
-      timestamp: block.timestamp
+      timestamp: block.timestamp,
+      blk: block.number
     });
 
     // Update global point history
     epoch += 1;
+    // Schedule slope decrease at lock end (week-aligned)
+    uint256 lockEndWeek = _alignToWeek(unlockTime);
+    int256 slopeDelta = int256(votingPowerAmount / (unlockTime - block.timestamp));
+    slopeChanges[lockEndWeek] += -slopeDelta;
+
     pointHistory[epoch] = Point({
       bias: _totalSupply,
-      slope: pointHistory[epoch - 1].slope + (votingPowerAmount / (unlockTime - block.timestamp)),
-      timestamp: block.timestamp
+      slope: pointHistory[epoch - 1].slope + uint256(int256(pointHistory[epoch - 1].slope) + slopeDelta) - pointHistory[epoch - 1].slope,
+      timestamp: block.timestamp,
+      blk: block.number
     });
 
     // Mint veDRAGON tokens (non-transferable)
@@ -524,11 +629,11 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     // Update point tracking
     userPointEpoch[msg.sender] += 1;
     uint256 userEpoch = userPointEpoch[msg.sender];
-    userPointHistory[msg.sender][userEpoch] = Point({bias: newVotingPower, slope: 0, timestamp: block.timestamp});
+    userPointHistory[msg.sender][userEpoch] = Point({bias: newVotingPower, slope: 0, timestamp: block.timestamp, blk: block.number});
 
     // Update global point history
     epoch += 1;
-    pointHistory[epoch] = Point({bias: _totalSupply, slope: 0, timestamp: block.timestamp});
+    pointHistory[epoch] = Point({bias: _totalSupply, slope: 0, timestamp: block.timestamp, blk: block.number});
 
     // Emit events
     emit LockUpdated(msg.sender, lockDuration, newVotingPower);
@@ -569,11 +674,11 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     // Update point tracking
     userPointEpoch[msg.sender] += 1;
     uint256 userEpoch = userPointEpoch[msg.sender];
-    userPointHistory[msg.sender][userEpoch] = Point({bias: 0, slope: 0, timestamp: block.timestamp});
+    userPointHistory[msg.sender][userEpoch] = Point({bias: 0, slope: 0, timestamp: block.timestamp, blk: block.number});
 
     // Update global point history
     epoch += 1;
-    pointHistory[epoch] = Point({bias: _totalSupply, slope: 0, timestamp: block.timestamp});
+    pointHistory[epoch] = Point({bias: _totalSupply, slope: 0, timestamp: block.timestamp, blk: block.number});
 
     // Transfer tokens back to user
     lockedToken.safeTransfer(msg.sender, amount);
@@ -679,7 +784,7 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     }
 
     // Save user point history
-    userPointHistory[_user][userEpoch] = Point({bias: newPower, slope: newSlope, timestamp: block.timestamp});
+    userPointHistory[_user][userEpoch] = Point({bias: newPower, slope: newSlope, timestamp: block.timestamp, blk: block.number});
 
     // Update global point history
     epoch += 1;
@@ -687,7 +792,8 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
     pointHistory[epoch] = Point({
       bias: lastPoint.bias + newPower - oldPower,
       slope: lastPoint.slope + newSlope - oldSlope,
-      timestamp: block.timestamp
+      timestamp: block.timestamp,
+      blk: block.number
     });
 
     // Update global supply
@@ -776,10 +882,8 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
    * @param amount Amount to withdraw
    */
   function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
-    require(
-      token != address(lockedToken) || amount <= lockedToken.balanceOf(address(this)) - totalLocked,
-      "Cannot withdraw locked tokens"
-    );
+    // Disallow withdrawing the lockedToken to avoid optics; use dedicated flows (unlock/claim) for user funds.
+    require(token != address(lockedToken), "Cannot withdraw locked token");
     IERC20(token).safeTransfer(owner(), amount);
   }
 
@@ -787,9 +891,7 @@ contract veDRAGON is IveDRAGON, ERC20, ReentrancyGuard, Ownable {
    * @notice Override ERC20 totalSupply function
    * @return Total supply of veDRAGON tokens
    */
-  function totalSupply() public view override returns (uint256) {
-    return _totalSupply;
-  }
+  // removed duplicate totalSupply override; time-decayed totalSupply implemented above
 
   /**
    * @notice Registers the contract with Sonic FeeM system

@@ -25,10 +25,38 @@ This folder contains deployment information for the OmniDragon OFT token and cro
 
 ### Core Dependencies (for fee distribution)
 
-| Chain | DragonJackpotVault | veDRAGONRevenueDistributor |
+| Chain | OmniDragonJackpotVault | veDRAGONRevenueDistributor |
 |------|---------------------|----------------------------|
-| Sonic | `0x09a5d89539fdd07f779a3ddc3a985d0a757b4d7b` | `0x4b0b4a25844744bbb23424533ca5a7f6dfaaba57` |
-| Arbitrum | `0x21f2c71190330d8e6ececb411f05195874274dc9` | `0x8b89562e46502fc31addcace5b99367083c5c0c1` |
+| Sonic | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
+| Arbitrum | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
+| Ethereum | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
+| Base | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
+| Avalanche | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
+
+Wrapped native set txs:
+- Sonic (WS): 0x2b656fb35ae1b8baa1b9039547cf87d2ced5c6f8e4b333c7560b1ed7e4b2b673
+- Arbitrum (WETH): 0x9b8224ea1b73e7113a91886a98bd885d07f348e48826c01331b9d5838b1a31b1
+- Ethereum (WETH): 0x6f4845e51d52dad055b5d76e0ec2c51185c53b614140b34c3fc164212982e027
+- Base (WETH): 0x902c299eab7a646e9c95a393de9ef2015152cf963231d4892c16848d2f5c564c
+- Avalanche (WAVAX): 0x6b3f382823d46f970471aea2bf6ce5823ebe763717201ec5ed0e9e0228072880
+
+### Vanity Core Addresses
+
+- OmniDragonPriceOracle (all chains): `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
+- OmniDragonPrimaryOracle (Sonic only): `0x69773eC63Bf4b8892fDEa30D07c91E205866e777`
+- veDRAGON (all chains, initialize after deploy): `0x6982e7747b0f833C2c5b07aD45D228734c145777`
+- OmniDragonJackpotVault (all chains): `0x69352F6940529E00ccc6669606721b07BC659777`
+
+### Registry Oracle Settings
+
+PriceOracle registered per chain (registry `getPriceOracle(chainId)`):
+- 42161 (Arbitrum) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
+- 1 (Ethereum) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
+- 8453 (Base) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
+- 43114 (Avalanche) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
+
+lzRead channel IDs set in registry:
+- 146 → 30332, 42161 → 30110, 1 → 30101, 8453 → 30184, 43114 → 30106
 
 ### Bridge DRAGON (Foundry cast, correct OFT ABI)
 

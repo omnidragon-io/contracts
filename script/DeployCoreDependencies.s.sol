@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../contracts/core/lottery/DragonJackpotVault.sol";
+import "../contracts/core/lottery/OmniDragonJackpotVault.sol";
 import "../contracts/core/oracles/OmniDragonPriceOracle.sol";
 import "../contracts/core/tokens/veDRAGON.sol";
 import "../contracts/core/governance/voting/veDRAGONRevenueDistributor.sol";
@@ -26,11 +26,11 @@ contract DeployCoreDependencies is Script {
         
         vm.startBroadcast(deployerPrivateKey);
         
-        // Step 1: Deploy DragonJackpotVault (needs wrapped native token)
-        console.log("1. Deploying DragonJackpotVault...");
+        // Step 1: Deploy OmniDragonJackpotVault (needs wrapped native token)
+        console.log("1. Deploying OmniDragonJackpotVault...");
         address wrappedNative = 0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38; // WS on Sonic
-        DragonJackpotVault jackpotVault = new DragonJackpotVault(wrappedNative, deployer);
-        console.log("   SUCCESS: DragonJackpotVault deployed at:", address(jackpotVault));
+        OmniDragonJackpotVault jackpotVault = new OmniDragonJackpotVault(wrappedNative, deployer);
+        console.log("   SUCCESS: OmniDragonJackpotVault deployed at:", address(jackpotVault));
         
         // Step 2: Deploy OmniDragonPriceOracle (real)
         console.log("2. Deploying OmniDragonPriceOracle...");
@@ -64,7 +64,7 @@ contract DeployCoreDependencies is Script {
         console.log("==============================");
         console.log("Chain:", chainName);
         console.log("Chain ID:", chainId);
-        console.log("DragonJackpotVault:", address(jackpotVault));
+        console.log("OmniDragonJackpotVault:", address(jackpotVault));
         console.log("OmniDragonPriceOracle:", address(priceOracle));
         console.log("veDRAGON:", address(veDragonToken));
         console.log("veDRAGONRevenueDistributor:", address(revenueDistributor));

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
-import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
+import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppRead.sol";
 import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppReceiver.sol";
+import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
 import "./OmniDragonPriceOracle.sol";
+import {IOmniDragonRegistry} from "../../interfaces/config/IOmniDragonRegistry.sol";
 
 /**
  * @title OmniDragonPrimaryOracle
@@ -21,7 +22,7 @@ import "./OmniDragonPriceOracle.sol";
  * - https://x.com/sonicreddragon
  * - https://t.me/sonicreddragon
  */
-contract OmniDragonPrimaryOracle is OmniDragonPriceOracle, OApp {
+contract OmniDragonPrimaryOracle is OmniDragonPriceOracle, OAppRead {
   
   // BQL Query Types for lzRead
   bytes4 public constant QUERY_LATEST_PRICE = bytes4(keccak256("getLatestPrice()"));
@@ -46,11 +47,10 @@ contract OmniDragonPrimaryOracle is OmniDragonPriceOracle, OApp {
     address _initialOwner,
     address _registry,
     address _dragonToken,
-    address _endpoint,
     address _delegate
   ) 
     OmniDragonPriceOracle(_nativeSymbol, _quoteSymbol, _initialOwner, _registry, _dragonToken)
-    OApp(_endpoint, _delegate)
+    OAppRead(IOmniDragonRegistry(_registry).getLayerZeroEndpoint(uint16(block.chainid)), _delegate)
   {}
 
   /**

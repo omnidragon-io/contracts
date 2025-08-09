@@ -420,6 +420,124 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   }
 
   /**
+   * @notice Process swap lottery and forward native fee for cross-chain VRF
+   * @dev Use this on chains without local VRF (e.g., Sonic). Caller must be authorized and send
+   *      sufficient native token to cover the VRF integrator fee. Any revert here preserves security
+   *      by never falling back to insecure randomness.
+   */
+  function processSwapLotteryPayable(
+    address trader,
+    address tokenIn,
+    uint256 amountIn,
+    uint256 swapValueUSD
+  ) external payable nonReentrant onlyAuthorizedSwapContract returns (uint256 entryId) {
+    require(trader != address(0), "Invalid trader address");
+    require(tokenIn != address(0), "Invalid token address");
+    require(amountIn > 0, "Invalid amount");
+
+    // Require a price oracle
+    if (address(priceOracle) == address(0)) {
+      return 0;
+    }
+
+    uint256 finalSwapAmountUSD = swapValueUSD;
+    bool priceObtained = false;
+
+    // If swapValueUSD is 0, calculate USD value using oracle
+    if (swapValueUSD == 0) {
+      try priceOracle.getAggregatedPrice() returns (int256 price, bool success, uint256 /* ts */) {
+        if (success && price > 0) {
+          finalSwapAmountUSD = (amountIn * uint256(price)) / 1e20;
+          priceObtained = true;
+        }
+      } catch {
+        return 0;
+      }
+    } else {
+      priceObtained = true;
+    }
+
+    if (!(priceObtained && finalSwapAmountUSD >= MIN_SWAP_USD)) {
+      return 0;
+    }
+
+    require(instantLotteryConfig.isActive, "Instant lottery not active");
+    require(address(vrfIntegrator) != address(0), "VRF integrator not set");
+
+    // Compute win chance
+    uint256 baseProbability = _calculateLinearWinChance(finalSwapAmountUSD);
+    uint256 boostedProbability = _applyVeDRAGONBoost(trader, baseProbability, finalSwapAmountUSD);
+
+    // Get quoted fee and forward only the required amount; if msg.value is 0, try using contract balance (sponsored)
+    uint256 requestId;
+    {
+      MessagingFee memory feeQuote = vrfIntegrator.quote(30110, "");
+      uint256 required = feeQuote.nativeFee;
+      uint256 forwarded = 0;
+      if (msg.value >= required) {
+        forwarded = required;
+        try vrfIntegrator.requestRandomWordsSimple{value: forwarded}(30110) returns (MessagingReceipt memory /* r */, uint64 sequence) {
+          requestId = uint256(sequence);
+        } catch {
+          return 0; // best-effort
+        }
+      } else if (msg.value == 0 && address(this).balance >= required) {
+        // Sponsored path: temporarily transfer required native to integrator via low-level call
+        (bool ok,) = address(vrfIntegrator).call{value: required}("");
+        if (!ok) {
+          return 0; // best-effort
+        }
+        // Now request with zero msg.value (integrator holds balance)
+        try vrfIntegrator.requestRandomWordsSimple(30110) returns (MessagingReceipt memory /* r2 */, uint64 seq2) {
+          requestId = uint256(seq2);
+        } catch {
+          return 0; // best-effort
+        }
+      } else {
+        return 0; // best-effort
+      }
+    }
+    if (requestId == 0) {
+      return 0; // best-effort
+    }
+
+    // Store pending entry
+    pendingEntries[requestId] = PendingLotteryEntry({
+      user: trader,
+      swapAmountUSD: finalSwapAmountUSD,
+      winProbability: boostedProbability,
+      timestamp: block.timestamp,
+      fulfilled: false,
+      randomnessSource: RandomnessSource.CROSS_CHAIN_VRF
+    });
+
+    emit LotteryEntryCreated(trader, finalSwapAmountUSD, boostedProbability, requestId);
+    emit RandomnessRequested(requestId, trader, RandomnessSource.CROSS_CHAIN_VRF);
+
+    // Update stats
+    userStats[trader].totalSwaps++;
+    userStats[trader].totalVolume += finalSwapAmountUSD;
+    userStats[trader].lastSwapTimestamp = block.timestamp;
+    totalLotteryEntries++;
+
+    return totalLotteryEntries;
+  }
+
+  /**
+   * @notice Returns current VRF native fee for cross-chain request to Arbitrum (eid 30110)
+   */
+  function getVrfFee() external view returns (uint256) {
+    if (address(vrfIntegrator) == address(0)) return 0;
+    MessagingFee memory feeQuote = vrfIntegrator.quote(30110, "");
+    return feeQuote.nativeFee;
+  }
+
+  /**
+   * @notice Owner can fund this contract with native to sponsor VRF fees
+   */
+  function fundVrf() external payable onlyOwner {}
+
+  /**
    * @notice Process instant lottery for a swap transaction
    * @param user User who made the swap
    * @param swapAmountUSD Swap amount in USD (6 decimals)
@@ -446,8 +564,11 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     uint256 boostedWinChancePPM = _applyVeDRAGONBoost(user, winChancePPM, swapAmountUSD);
 
     if (instantLotteryConfig.useVRFForInstant) {
-      // Request VRF randomness
+      // Request VRF randomness (best-effort). If unavailable, skip silently
       uint256 randomnessId = _requestVRFForInstantLottery(user, swapAmountUSD, boostedWinChancePPM);
+      if (randomnessId == 0) {
+        return;
+      }
       emit InstantLotteryEntered(user, swapAmountUSD, winChancePPM, boostedWinChancePPM, randomnessId);
     } else {
       // SECURITY: Non-VRF mode disabled for security - all randomness must be VRF-based
@@ -496,9 +617,8 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     // Removed randomnessProvider fallback - using only Chainlink VRF sources
 
     if (requestId == 0) {
-      // All VRF sources failed - NEVER use insecure fallback randomness
-      // Queue the entry for later processing when VRF is available
-      revert("VRF services unavailable - lottery entry rejected for security");
+      // All VRF sources failed - best-effort: do not revert; caller may skip lottery
+      return 0;
     }
 
     // Store pending lottery entry
@@ -950,8 +1070,11 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     
     // Process the lottery entry with USD amount using secure VRF
     if (instantLotteryConfig.useVRFForInstant) {
-      // Request VRF randomness (same secure approach as processInstantLottery)
+      // Request VRF randomness (best-effort). If unavailable, skip silently
       uint256 randomnessId = _requestVRFForInstantLottery(user, usdAmount, winProbability);
+      if (randomnessId == 0) {
+        return;
+      }
       emit InstantLotteryEntered(user, usdAmount, winProbability, winProbability, randomnessId);
     } else {
       // SECURITY: Non-VRF mode disabled for security - all randomness must be VRF-based

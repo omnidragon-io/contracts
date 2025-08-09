@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../contracts/core/lottery/DragonJackpotVault.sol";
+import "../contracts/core/lottery/OmniDragonJackpotVault.sol";
 
 contract GetVaultBytecodeHash is Script {
     address constant OWNER = 0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F;
@@ -10,7 +10,7 @@ contract GetVaultBytecodeHash is Script {
     function run() external view {
         // Match DeployVanityCore.s.sol: constructor(address(0), owner)
         bytes memory initCode = abi.encodePacked(
-            type(DragonJackpotVault).creationCode,
+            type(OmniDragonJackpotVault).creationCode,
             abi.encode(address(0), OWNER)
         );
         bytes32 bytecodeHash = keccak256(initCode);
