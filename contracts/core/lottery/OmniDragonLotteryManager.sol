@@ -16,7 +16,6 @@ interface IVRFCallbackReceiver {
 }
 import {MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import {IDragonJackpotDistributor} from "../../interfaces/lottery/IDragonJackpotDistributor.sol";
 import {IOmniDragonPriceOracle} from "../../interfaces/oracles/IOmniDragonPriceOracle.sol";
 import {IveDRAGONBoostManager} from "../../interfaces/governance/voting/IveDRAGONBoostManager.sol";
 
@@ -127,7 +126,6 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   // ============ STATE VARIABLES ============
 
   // Core dependencies
-  IDragonJackpotDistributor public jackpotDistributor;
   IERC20 public veDRAGONToken;
   IERC20 public redDRAGONToken;
   IveDRAGONBoostManager public veDRAGONBoostManager;
@@ -193,7 +191,7 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     bool isActive
   );
   event SwapContractAuthorized(address indexed swapContract, bool authorized);
-  event LotteryManagerInitialized(address jackpotDistributor, address veDRAGONToken);
+  event LotteryManagerInitialized(address jackpotVault, address veDRAGONToken);
   event PriceOracleUpdated(address indexed newPriceOracle);
   event ChainMultiplierUpdated(uint256 oldMultiplier, uint256 newMultiplier);
   event RedDRAGONTokenUpdated(address indexed redDRAGONToken);
@@ -202,16 +200,16 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   // ============ CONSTRUCTOR ============
 
   constructor(
-    address _jackpotDistributor,
+    address _jackpotVault,
     address _veDRAGONToken,
     address _priceOracle,
     uint256 _chainId
   ) Ownable(msg.sender) {
-    require(_jackpotDistributor != address(0), "Invalid jackpot distributor");
+    require(_jackpotVault != address(0), "Invalid jackpot vault");
     require(_veDRAGONToken != address(0), "Invalid veDRAGON token");
     require(_priceOracle != address(0), "Invalid price oracle");
 
-    jackpotDistributor = IDragonJackpotDistributor(_jackpotDistributor);
+    jackpotVault = IDragonJackpotVault(_jackpotVault);
     veDRAGONToken = IERC20(_veDRAGONToken);
     priceOracle = IOmniDragonPriceOracle(_priceOracle);
     // veDRAGONBoostManager will be set via setter function after deployment
@@ -220,14 +218,14 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
 
     // Initialize instant lottery config using PPM constants
     instantLotteryConfig = InstantLotteryConfig({
-      baseWinProbability: MIN_WIN_CHANCE_PPM, // 40 PPM = 0.004% (for compatibility only - actual calculation uses constants)
+      baseWinProbability: MIN_WIN_CHANCE_PPM,
       minSwapAmount: MIN_SWAP_USD,
       rewardPercentage: 6900, // 69% of jackpot
       isActive: true,
       useVRFForInstant: true
     });
 
-    emit LotteryManagerInitialized(_jackpotDistributor, _veDRAGONToken);
+    emit LotteryManagerInitialized(_jackpotVault, _veDRAGONToken);
   }
 
   // ============ MODIFIERS ============
@@ -274,11 +272,6 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   function setJackpotVault(address _jackpotVault) external onlyOwner {
     require(_jackpotVault != address(0), "Invalid jackpot vault");
     jackpotVault = IDragonJackpotVault(_jackpotVault);
-  }
-
-  function setJackpotDistributor(address _jackpotDistributor) external onlyOwner {
-    require(_jackpotDistributor != address(0), "Invalid jackpot distributor");
-    jackpotDistributor = IDragonJackpotDistributor(_jackpotDistributor);
   }
 
   function setPriceOracle(address _priceOracle) external onlyOwner {
@@ -612,25 +605,21 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
    * @return reward The calculated reward amount
    */
   function _calculateInstantLotteryReward(uint256 /* swapAmountUSD */) internal view returns (uint256 reward) {
-    if (address(jackpotDistributor) == address(0)) {
+    if (address(jackpotVault) == address(0)) {
       return 0;
     }
 
     uint256 currentJackpot;
-    try jackpotDistributor.getCurrentJackpot() returns (uint256 jackpot) {
+    try jackpotVault.getJackpotBalance() returns (uint256 jackpot) {
       currentJackpot = jackpot;
     } catch {
-      // If fetching jackpot fails, treat it as 0 for this calculation
-      // This prevents VRF callback from reverting and causing DoS
       return 0;
     }
     if (currentJackpot == 0) {
       return 0;
     }
 
-    // Calculate reward as percentage of current jackpot (purely dynamic)
     reward = (currentJackpot * instantLotteryConfig.rewardPercentage) / 10000;
-
     return reward;
   }
 
@@ -641,37 +630,14 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
    * @dev Pure coordinator - delegates all fund handling to other contracts
    */
   function _distributeInstantLotteryReward(address winner, uint256 reward) internal {
-    if (address(jackpotDistributor) == address(0) || reward == 0) {
+    if (address(jackpotVault) == address(0) || reward == 0) {
       return;
     }
-
-    // PRIMARY: Try jackpot distributor (should work 99%+ of the time)
-    try jackpotDistributor.distributeJackpot(winner, reward) {
-      // ✅ Reward distributed successfully - most common path
+    try jackpotVault.payJackpot(winner, reward) {
       emit InstantLotteryProcessed(winner, 0, true, reward);
-      return;
-    } catch Error(string memory /* reason */) {
-      // Log specific error for debugging
-      emit PrizeTransferFailed(winner, reward);
-    } catch (bytes memory /* lowLevelData */) {
-      // Low-level error
+    } catch {
       emit PrizeTransferFailed(winner, reward);
     }
-    // FALLBACK: Try jackpot vault if distributor fails
-    if (address(jackpotVault) != address(0)) {
-      try jackpotVault.payJackpot(winner, reward) {
-        // ✅ Jackpot vault succeeded
-        emit InstantLotteryProcessed(winner, 0, true, reward);
-        return;
-      } catch {
-        // Vault also failed
-        emit PrizeTransferFailed(winner, reward);
-      }
-    }
-
-    // If all payout methods fail, emit event for manual intervention
-    // No funds are held by this contract
-    emit PrizeTransferFailed(winner, reward);
   }
 
   /**
@@ -877,10 +843,14 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
    * @notice Get current jackpot amount
    */
   function getCurrentJackpot() external view returns (uint256) {
-    if (address(jackpotDistributor) == address(0)) {
+    if (address(jackpotVault) == address(0)) {
       return 0;
     }
-    return jackpotDistributor.getCurrentJackpot();
+    try jackpotVault.getJackpotBalance() returns (uint256 bal) {
+      return bal;
+    } catch {
+      return 0;
+    }
   }
 
   // ============ DEPRECATED PRIZE CLAIM FUNCTIONS ============

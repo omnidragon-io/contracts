@@ -46,12 +46,8 @@ contract DeployCoreDependencies is Script {
         
         // Step 3: Deploy veDRAGON Token (real)
         console.log("3. Deploying veDRAGON Token...");
-        veDRAGON veDragonToken = new veDRAGON(
-            omniDRAGON,           // token (DRAGON)
-            veDRAGON.TokenType.DRAGON, // tokenType
-            "Voting Escrow DRAGON", // name
-            "veDRAGON"             // symbol
-        );
+        veDRAGON veDragonToken = new veDRAGON("Voting Escrow DRAGON", "veDRAGON");
+        veDragonToken.initialize(omniDRAGON, veDRAGON.TokenType.DRAGON);
         console.log("   SUCCESS: veDRAGON deployed at:", address(veDragonToken));
         
         // Step 4: Deploy veDRAGON Revenue Distributor

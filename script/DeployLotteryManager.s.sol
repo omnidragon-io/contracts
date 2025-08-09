@@ -10,7 +10,7 @@ contract DeployLotteryManager is Script {
     
     // VRF addresses (operational)
     address constant VRF_INTEGRATOR = 0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5;
-    address constant VRF_CONSUMER = 0x697a9d438a5b61ea75aa823f98a85efb70fd23d5; // Arbitrum only
+    // address constant VRF_CONSUMER = 0x697a9d438A5B61ea75Aa823f98A85EFB70FD23d5; // Example, not used
     
     // Chain-specific configurations
     struct ChainConfig {
@@ -38,65 +38,49 @@ contract DeployLotteryManager is Script {
         
         vm.startBroadcast(deployerPrivateKey);
         
-        // Step 1: Deploy mock components (replace with real addresses when available)
-        console.log("1. Deploying mock components...");
+        // Step 1: Load real dependency addresses from environment
+        console.log("1. Loading dependency addresses...");
+        address jackpotVaultAddr = vm.envAddress("JACKPOT_VAULT");
+        address veDRAGONAddr = vm.envAddress("VEDRAGON");
+        address priceOracleAddr = vm.envAddress("PRICE_ORACLE");
+        address vrfIntegratorAddr = vm.envOr("VRF_INTEGRATOR_ADDR", address(0));
+        console.log("   JackpotVault:", jackpotVaultAddr);
+        console.log("   veDRAGON:", veDRAGONAddr);
+        console.log("   PriceOracle:", priceOracleAddr);
         
-        // Mock Jackpot Distributor
-        MockJackpotDistributor jackpotDistributor = new MockJackpotDistributor();
-        console.log("   Mock JackpotDistributor deployed at:", address(jackpotDistributor));
-        
-        // Mock veDRAGON (simple ERC20 for now)
-        MockToken veDRAGON = new MockToken("Voting Escrow DRAGON", "veDRAGON", 18);
-        console.log("   Mock veDRAGON deployed at:", address(veDRAGON));
-        
-        // Mock Price Oracle
-        MockPriceOracle priceOracle = new MockPriceOracle();
-        console.log("   Mock PriceOracle deployed at:", address(priceOracle));
-        
-        // Step 2: Deploy DragonJackpotVault (optional for now)
-        console.log("2. Deploying DragonJackpotVault...");
-        DragonJackpotVault jackpotVault = new DragonJackpotVault();
-        console.log("   DragonJackpotVault deployed at:", address(jackpotVault));
-        
-        // Step 3: Deploy OmniDragonLotteryManager
-        console.log("3. Deploying OmniDragonLotteryManager...");
+        // Step 2: Deploy OmniDragonLotteryManager
+        console.log("2. Deploying OmniDragonLotteryManager...");
         OmniDragonLotteryManager lotteryManager = new OmniDragonLotteryManager(
-            address(jackpotDistributor), // Use mock distributor
-            address(veDRAGON),
-            address(priceOracle),
+            jackpotVaultAddr,
+            veDRAGONAddr,
+            priceOracleAddr,
             config.chainId
         );
         console.log("   OmniDragonLotteryManager deployed at:", address(lotteryManager));
         
-        // Step 4: Configure VRF integration
-        console.log("4. Configuring VRF integration...");
-        if (currentChainId == 146) { // Sonic
-            lotteryManager.setVRFIntegrator(VRF_INTEGRATOR);
-            console.log("   VRF Integrator set to:", VRF_INTEGRATOR);
-        } else if (currentChainId == 42161) { // Arbitrum  
-            lotteryManager.setVRFConsumer(VRF_CONSUMER);
-            console.log("   VRF Consumer set to:", VRF_CONSUMER);
+        // Step 3: Configure VRF integration (optional)
+        console.log("3. Configuring VRF integration (optional)...");
+        if (vrfIntegratorAddr != address(0)) {
+            lotteryManager.setVRFIntegrator(vrfIntegratorAddr);
+            console.log("   VRF Integrator set to:", vrfIntegratorAddr);
         }
         
-        // Step 5: Set JackpotVault owner to LotteryManager
-        console.log("5. Transferring JackpotVault ownership...");
-        jackpotVault.transferOwnership(address(lotteryManager));
+        // Note: JackpotVault ownership transfer should be performed separately using the real vault contract
         
         vm.stopBroadcast();
         
         console.log("");
         console.log("DEPLOYMENT SUCCESSFUL!");
         console.log("==============================");
-        console.log("DragonJackpotVault:", address(jackpotVault));
-        console.log("Mock veDRAGON:", address(veDRAGON));
-        console.log("Mock PriceOracle:", address(priceOracle));
+        console.log("JackpotVault:", jackpotVaultAddr);
+        console.log("veDRAGON:", veDRAGONAddr);
+        console.log("PriceOracle:", priceOracleAddr);
         console.log("OmniDragonLotteryManager:", address(lotteryManager));
         console.log("");
         console.log("NEXT STEPS:");
-        console.log("1. Deploy real veDRAGON and PriceOracle contracts");
-        console.log("2. Update lottery manager with real addresses");
-        console.log("3. Configure lottery parameters");
-        console.log("4. Test lottery functionality with VRF");
+        console.log("1. Configure lottery parameters");
+        console.log("2. Authorize swap contracts via setAuthorizedSwapContract");
+        console.log("3. (Optional) Set redDRAGON token if not already");
         console.log("");
         console.log("VRF INTEGRATION:");
         console.log("- VRF system is operational and ready");
@@ -135,51 +119,4 @@ contract DeployLotteryManager is Script {
     }
 }
 
-// Mock contracts for initial deployment
-contract MockToken {
-    string public name;
-    string public symbol;
-    uint8 public decimals;
-    uint256 public totalSupply;
-    mapping(address => uint256) public balanceOf;
-    
-    constructor(string memory _name, string memory _symbol, uint8 _decimals) {
-        name = _name;
-        symbol = _symbol;
-        decimals = _decimals;
-        totalSupply = 1000000 * 10**_decimals;
-        balanceOf[msg.sender] = totalSupply;
-    }
-    
-    // Mock methods for veDRAGON interface
-    function lockedEnd(address) external pure returns (uint256) {
-        return block.timestamp + 365 days; // Mock 1 year lock
-    }
-}
-
-contract MockPriceOracle {
-    // Implement IOmniDragonPriceOracle interface
-    function getAggregatedPrice() external pure returns (int256 price, bool success, uint256 timestamp) {
-        return (100000000, true, block.timestamp); // $1.00 with 8 decimals
-    }
-    
-    function getLatestPrice() external pure returns (int256 price, uint256 timestamp) {
-        return (100000000, block.timestamp); // $1.00 with 8 decimals
-    }
-}
-
-contract MockJackpotDistributor {
-    uint256 public jackpotBalance = 1000 * 1e18; // Mock 1000 DRAGON tokens
-    
-    // Implement IDragonJackpotDistributor interface
-    function getCurrentJackpot() external view returns (uint256) {
-        return jackpotBalance;
-    }
-    
-    function distributeJackpot(address winner, uint256 amount) external {
-        require(amount <= jackpotBalance, "Insufficient jackpot");
-        jackpotBalance -= amount;
-        // In real implementation, would transfer tokens to winner
-        console.log("Jackpot distributed to", winner, "amount:", amount);
-    }
-}
+// No mock contracts included. This script assumes real addresses are supplied via env.
