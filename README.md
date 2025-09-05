@@ -13,6 +13,8 @@ OmniDragon is a multi-chain DeFi protocol that leverages LayerZero's omnichain m
 - **Governance**: veDRAGON voting and revenue distribution
 - **Bridge Integration**: Seamless token transfers across chains
 
+📚 **Learn more**: Visit our [comprehensive documentation](https://docs.omnidragon.io) for detailed guides and API references.
+
 ## Quick Start
 
 ### Prerequisites
@@ -45,6 +47,8 @@ npx hardhat run scripts/deploy.ts --network sonic
 cd deploy/OmniDragonVRF/
 npx hardhat run scripts/deploy-vrf.ts --network sonic
 ```
+
+📚 **Need help?** Check our [deployment documentation](https://docs.omnidragon.io/deployment) for step-by-step guides.
 
 ## Project Structure
 
@@ -82,6 +86,8 @@ npx hardhat run scripts/deploy-vrf.ts --network sonic
 - **Features**: Cross-chain jackpot pools, automated draws
 - **Integration**: VRF-powered randomness for fair draws
 
+📚 **Explore**: Learn about our [lottery mechanics](https://docs.omnidragon.io/lottery) and jackpot systems.
+
 ## Supported Chains
 
 | Chain | EID | Status | Explorer |
@@ -92,6 +98,8 @@ npx hardhat run scripts/deploy-vrf.ts --network sonic
 | Avalanche | 30106 | Deployed | [SnowScan](https://snowscan.xyz) |
 | Sonic | 30332 | Deployed | [SonicScan](https://sonicscan.org) |
 | BSC | 30102 | Planned | [BscScan](https://bscscan.com) |
+
+📚 **Chain Details**: See our [multi-chain documentation](https://docs.omnidragon.io/chains) for deployment addresses and configurations.
 
 ## Development
 
@@ -132,6 +140,8 @@ npx hardhat run scripts/test-oft-bridge.ts --network sonic
 - [**VRF System**](./deployments/README.md) - Cross-chain randomness documentation
 - [**Oracle Deployment**](./docs/OMNIDRAGON_ORACLE_DEPLOYMENT_SUMMARY.md) - Oracle infrastructure
 
+📚 **Full Documentation**: Visit [docs.omnidragon.io](https://docs.omnidragon.io) for comprehensive guides, API references, and tutorials.
+
 ## Key Scripts
 
 ### Token Operations
@@ -163,6 +173,8 @@ cast send 0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5 \
 - Comprehensive test coverage
 - Audited smart contracts (when applicable)
 
+📚 **Security Details**: Read our [security documentation](https://docs.omnidragon.io/security) for audit reports and best practices.
+
 ## Contributing
 
 1. Fork the repository
@@ -185,6 +197,8 @@ OmniDragon is building the future of cross-chain DeFi by leveraging LayerZero's 
 - **Fair Lotteries**: VRF-powered jackpot systems
 - **Community Governance**: veDRAGON voting system
 - **Oracle Infrastructure**: Reliable price feeds
+
+📚 **Deep Dive**: Explore our [ecosystem overview](https://docs.omnidragon.io/overview) and [architecture documentation](https://docs.omnidragon.io/architecture) for technical details.
 
 ---
 
