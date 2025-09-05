@@ -190,4 +190,4 @@ OmniDragon is building the future of cross-chain DeFi by leveraging LayerZero's 
 
 **Built by the OmniDragon team**
 
-*For questions or support, join our [Discord](https://discord.gg/omnidragon) or create an issue on GitHub.*
+*For questions or support, join our [Discord](https://discord.gg/omnidragon), visit our [documentation](https://docs.omnidragon.io), or create an issue on GitHub.*
