@@ -1,0 +1,10 @@
+{
+  "salt": "0xcc4b10a3b3837c4c0fcb73d2fbb5737613b97b75844699571ee8cd32ad7906f5",
+  "address": "0x691859678d0905d3046c9f5ac79560753f479777",
+  "bytecode_hash": "0xaf41b7ef06f9d2ea3a180f36afe4281fcfed8ba5abd6116ce0dbaa3d965b37f7",
+  "factory_address": "0xaa28020dda6b954d16208eccf873d79ac6533833",
+  "attempts": 24799,
+  "pattern": "0x69...777",
+  "time_seconds": 0.070202204,
+  "threads_used": 28
+}

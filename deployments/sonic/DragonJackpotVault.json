@@ -1,0 +1,101 @@
+{
+  "contractName": "DragonJackpotVault",
+  "address": "0x76E380958aE4fD9FD97b12de1652D0830Ff4f38C",
+  "network": "Sonic",
+  "chainId": 146,
+  "deploymentTx": "0x12966223572b817281d8ab2116dae1eb6e4c274fa8e53e44a6199ebf91b6204e",
+  "integrationTx": "0xa216603da35c82e580ee34e10965738aecf3440362412258542266a294ea185c",
+  "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+  "deploymentBlock": "Latest deployment",
+  "status": "DEPLOYED_AND_INTEGRATED",
+  "features": [
+    "Auto-conversion: omniDRAGON -> pDRAGON",
+    "69% lottery payouts in wS",
+    "Triple-redundant wS conversion", 
+    "Gelato automation compatible",
+    "Native S support",
+    "Lottery manager integration"
+  ],
+  "integrations": {
+    "omniDRAGON": "0x0A6B1A9a74Cc1b0ED15B53D9Dc66A8fE56cf7aA2",
+    "universalRouter": "0xA047e2AbF8263FcA7c368F43e2f960A06FD9949f",
+    "peapodsBond": "0x24232517E648525a2A5b9935aaDc42ae250f5eca",
+    "pfwS36Vault": "0x924140B8FA4e609038Be15fB32D4eeFC5ED6DDE0",
+    "shadowPair": "0xE1d1f1951e4e501c488d095aC328646B76C39C2b"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "name": "autoConversionEnabled",
+      "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "triggerAutoConversion", 
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getJackpotBalance",
+      "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getJackpotBreakdown",
+      "outputs": [
+        {"internalType": "uint256", "name": "totalPDragon", "type": "uint256"},
+        {"internalType": "uint256", "name": "totalWS", "type": "uint256"},
+        {"internalType": "uint256", "name": "totalPfwS36", "type": "uint256"},
+        {"internalType": "uint256", "name": "estimatedTotal", "type": "uint256"}
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAutoConversionStatus",
+      "outputs": [
+        {"internalType": "bool", "name": "enabled", "type": "bool"},
+        {"internalType": "bool", "name": "wsEnabled", "type": "bool"}, 
+        {"internalType": "uint256", "name": "omniBalance", "type": "uint256"},
+        {"internalType": "uint256", "name": "pDragonBalance", "type": "uint256"}
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [{"internalType": "address", "name": "winner", "type": "address"}],
+      "name": "payJackpotWinner",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "stateMutability": "payable",
+      "type": "receive"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {"indexed": false, "internalType": "uint256", "name": "omniAmount", "type": "uint256"},
+        {"indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256"}
+      ],
+      "name": "AutoConversionTriggered",
+      "type": "event"
+    }
+  ]
+}

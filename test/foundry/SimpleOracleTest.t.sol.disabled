@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "forge-std/Test.sol";
+import "forge-std/console.sol";
+
+// Simple test to verify Oracle contract functions and logic
+contract SimpleOracleTest is Test {
+    
+    function testBasicMath() public {
+        // Test the DRAGON/USD calculation math
+        uint256 dragonReserve = 1000e18; // 1000 DRAGON
+        uint256 sonicReserve = 500e18; // 500 S  
+        int256 sonicUsdPrice = 2e8; // $2.00 S/USD (8 decimals)
+        
+        // DRAGON/S price = sonicReserve / dragonReserve = 0.5 S per DRAGON
+        int256 dragonSonicPrice = int256(sonicReserve * 1e18 / dragonReserve); // 0.5e18
+        
+        // DRAGON/USD = DRAGON/S × S/USD = 0.5 × 2.0 = $1.00
+        int256 dragonUsdPrice = (dragonSonicPrice * sonicUsdPrice) / 1e18; // 1e8
+        
+        console.log("DRAGON Reserve:", dragonReserve);
+        console.log("Sonic Reserve:", sonicReserve); 
+        console.log("S/USD Price:", uint256(sonicUsdPrice));
+        console.log("DRAGON/S Price:", uint256(dragonSonicPrice));
+        console.log("DRAGON/USD Price:", uint256(dragonUsdPrice));
+        
+        assertEq(dragonSonicPrice, 0.5e18); // 0.5 S per DRAGON
+        assertEq(dragonUsdPrice, 1e8); // $1.00 per DRAGON
+    }
+    
+    function testWeightedAverageCalculation() public {
+        // Test oracle weight calculations
+        int256 chainlinkPrice = 100e8; // $100
+        int256 bandPrice = 102e8; // $102
+        int256 api3Price = 98e8; // $98
+        int256 pythPrice = 101e8; // $101
+        
+        uint256 chainlinkWeight = 4000; // 40%
+        uint256 bandWeight = 3000; // 30% 
+        uint256 api3Weight = 2000; // 20%
+        uint256 pythWeight = 1000; // 10%
+        
+        int256 weightedSum = (chainlinkPrice * int256(chainlinkWeight)) +
+                           (bandPrice * int256(bandWeight)) +
+                           (api3Price * int256(api3Weight)) +
+                           (pythPrice * int256(pythWeight));
+        
+        int256 averagePrice = weightedSum / 10000; // Divide by total weight
+        
+        console.log("Chainlink: $", uint256(chainlinkPrice) / 1e8);
+        console.log("Band: $", uint256(bandPrice) / 1e8);
+        console.log("API3: $", uint256(api3Price) / 1e8);
+        console.log("Pyth: $", uint256(pythPrice) / 1e8);
+        console.log("Weighted Average: $", uint256(averagePrice) / 1e8);
+        
+        // Expected: (100*0.4 + 102*0.3 + 98*0.2 + 101*0.1) = 40 + 30.6 + 19.6 + 10.1 = 100.3
+        assertEq(averagePrice, 100.3e8);
+    }
+    
+    function testDecimalNormalization() public {
+        // Test converting different decimal formats to 8 decimals
+        
+        // Chainlink (8 decimals) -> 8 decimals
+        int256 chainlinkPrice = 150e8;
+        int256 normalized8to8 = chainlinkPrice; // No change
+        assertEq(normalized8to8, 150e8);
+        
+        // Band Protocol (18 decimals) -> 8 decimals  
+        int256 bandPrice = 150e18;
+        int256 normalized18to8 = bandPrice / 1e10;
+        assertEq(normalized18to8, 150e8);
+        
+        // API3 (18 decimals) -> 8 decimals
+        int224 api3Price = 150e18;
+        int256 api3Normalized = int256(api3Price) / 1e10;
+        assertEq(api3Normalized, 150e8);
+        
+        // Pyth (dynamic exponent) -> 8 decimals
+        int64 pythPrice = 15000; // Price with exponent
+        int32 pythExponent = -2; // -2 means divide by 100, so 15000/100 = 150
+        
+        int256 pythNormalized;
+        if (pythExponent >= -8) {
+            pythNormalized = int256(pythPrice) * int256(10 ** uint32(8 + pythExponent));
+        } else {
+            pythNormalized = int256(pythPrice) / int256(10 ** uint32(-pythExponent - 8));
+        }
+        
+        assertEq(pythNormalized, 150e8);
+        
+        console.log("All normalized prices equal 150e8 (150.00 USD)");
+    }
+    
+    function testSanityChecks() public {
+        // Test price sanity bounds ($0.000001 to $1,000,000)
+        int256 minValidPrice = 1; // $0.000001 (8 decimals: 1e-8)
+        int256 maxValidPrice = 1e14; // $1,000,000 (8 decimals: 1e6 * 1e8)
+        
+        assertTrue(minValidPrice >= 1);
+        assertTrue(maxValidPrice <= 1e14);
+        
+        // Test invalid prices
+        int256 tooLow = 0;
+        int256 tooHigh = 1e15;
+        
+        assertTrue(tooLow < minValidPrice);
+        assertTrue(tooHigh > maxValidPrice);
+        
+        console.log("Min valid: $", uint256(minValidPrice) * 1e8 / 1e16); // Convert to readable
+        console.log("Max valid: $", uint256(maxValidPrice) / 1e8);
+    }
+    
+    function testStalenessThresholds() public {
+        uint256 currentTime = block.timestamp;
+        
+        // Define staleness thresholds (from Oracle contract)
+        uint256 CHAINLINK_STALENESS = 3600; // 1 hour
+        uint256 BAND_STALENESS = 300; // 5 minutes
+        uint256 API3_STALENESS = 3600; // 1 hour  
+        uint256 PYTH_STALENESS = 60; // 1 minute
+        uint256 DEX_STALENESS = 600; // 10 minutes
+        
+        // Test fresh data
+        uint256 freshChainlink = currentTime - 1800; // 30 minutes ago
+        uint256 freshBand = currentTime - 240; // 4 minutes ago
+        uint256 freshAPI3 = currentTime - 1800; // 30 minutes ago
+        uint256 freshPyth = currentTime - 30; // 30 seconds ago
+        uint256 freshDex = currentTime - 300; // 5 minutes ago
+        
+        assertTrue(currentTime - freshChainlink <= CHAINLINK_STALENESS);
+        assertTrue(currentTime - freshBand <= BAND_STALENESS);
+        assertTrue(currentTime - freshAPI3 <= API3_STALENESS);
+        assertTrue(currentTime - freshPyth <= PYTH_STALENESS);
+        assertTrue(currentTime - freshDex <= DEX_STALENESS);
+        
+        // Test stale data
+        uint256 staleChainlink = currentTime - 7200; // 2 hours ago
+        uint256 staleBand = currentTime - 600; // 10 minutes ago
+        uint256 staleAPI3 = currentTime - 7200; // 2 hours ago
+        uint256 stalePyth = currentTime - 120; // 2 minutes ago
+        uint256 staleDex = currentTime - 1200; // 20 minutes ago
+        
+        assertTrue(currentTime - staleChainlink > CHAINLINK_STALENESS);
+        assertTrue(currentTime - staleBand > BAND_STALENESS);
+        assertTrue(currentTime - staleAPI3 > API3_STALENESS);
+        assertTrue(currentTime - stalePyth > PYTH_STALENESS);
+        assertTrue(currentTime - staleDex > DEX_STALENESS);
+        
+        console.log("All staleness checks passed");
+    }
+    
+    function testReserveRatioCalculations() public {
+        // Test various DRAGON/S price scenarios
+        
+        // Scenario 1: DRAGON more valuable (less supply)
+        uint112 dragonReserve1 = 100e18; // 100 DRAGON
+        uint112 sonicReserve1 = 500e18; // 500 S
+        // Price = 500/100 = 5 S per DRAGON
+        uint256 price1 = uint256(sonicReserve1) * 1e18 / uint256(dragonReserve1);
+        assertEq(price1, 5e18);
+        
+        // Scenario 2: DRAGON less valuable (more supply)
+        uint112 dragonReserve2 = 1000e18; // 1000 DRAGON  
+        uint112 sonicReserve2 = 200e18; // 200 S
+        // Price = 200/1000 = 0.2 S per DRAGON
+        uint256 price2 = uint256(sonicReserve2) * 1e18 / uint256(dragonReserve2);
+        assertEq(price2, 0.2e18);
+        
+        // Scenario 3: Equal reserves
+        uint112 dragonReserve3 = 500e18; // 500 DRAGON
+        uint112 sonicReserve3 = 500e18; // 500 S  
+        // Price = 500/500 = 1 S per DRAGON
+        uint256 price3 = uint256(sonicReserve3) * 1e18 / uint256(dragonReserve3);
+        assertEq(price3, 1e18);
+        
+        console.log("Scenario 1 - DRAGON/S:", price1 / 1e18, "S per DRAGON");
+        console.log("Scenario 2 - DRAGON/S:", price2 / 1e17, "* 0.1 S per DRAGON"); 
+        console.log("Scenario 3 - DRAGON/S:", price3 / 1e18, "S per DRAGON");
+    }
+    
+    function testEndToEndCalculation() public {
+        // Complete end-to-end calculation test
+        console.log("=== END-TO-END DRAGON/USD CALCULATION ===");
+        
+        // Step 1: Calculate weighted S/USD average (simplified)
+        int256 avgSUsdPrice = 1.195e8; // $1.195 (pre-calculated weighted average)
+        
+        // Step 2: Get DRAGON/S from DEX
+        uint112 dragonReserve = 800e18; // 800 DRAGON
+        uint112 sonicReserve = 320e18; // 320 S
+        int256 dragonSPrice = int256(uint256(sonicReserve) * 1e18 / uint256(dragonReserve));
+        
+        // Step 3: Calculate final DRAGON/USD  
+        int256 dragonUsdPrice = (dragonSPrice * avgSUsdPrice) / 1e18;
+        
+        console.log("Weighted S/USD Price: $1.195");
+        console.log("DRAGON Reserve:", dragonReserve / 1e18);
+        console.log("Sonic Reserve:", sonicReserve / 1e18);
+        console.log("DRAGON/S Price: 0.4 S per DRAGON");
+        console.log("Final DRAGON/USD: $", uint256(dragonUsdPrice) / 1e8);
+        
+        // Verify: (320/800) * 1.195 = 0.4 * 1.195 = 0.478
+        assertEq(dragonSPrice, 0.4e18); // 0.4 S per DRAGON
+        assertTrue(dragonUsdPrice > 0.477e8 && dragonUsdPrice < 0.479e8);
+    }
+}

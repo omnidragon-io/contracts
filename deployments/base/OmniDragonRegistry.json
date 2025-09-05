@@ -1,20 +1,12 @@
 {
-  "address": "0x6949936442425f4137807Ac5d269e6Ef66d50777",
-  "deployer": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
-  "transactionHash": "0x62b4fe25e06b87b8bd4d86f333ebafa3b01bf681e457f40570cfca60731bd4be",
-  "blockNumber": 33854989,
-  "gasUsed": 3228555,
-  "gasCost": "0.0000164485191585 ETH",
-  "gasPrice": "0.0050947 gwei",
-  "deploymentType": "CREATE2",
-  "salt": "0x739045e5616b1e08a77452813c381b9669fc1332384606e22d1f02e3a229563d",
-  "factory": "0xAA28020DDA6b954D16208eccF873D79AC6533833",
-  "vanityPattern": "0x69...0777",
-  "constructorArgs": ["0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F"],
-  "status": "deployed",
-  "deploymentDate": "2025-08-06",
+  "contract": "OmniDragonRegistry",
+  "address": "0x6940aDc0A505108bC11CA28EefB7E3BAc7AF0777",
   "chainId": 8453,
-  "chainName": "Base",
-  "rpcUrl": "https://eu.endpoints.matrixed.link/rpc/base?auth=p886of4gitu82",
-  "note": "Successfully deployed with vanity address pattern 0x69...0777"
+  "network": "base",
+  "owner": "0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F",
+  "factory": "0xAA28020DDA6b954D16208eccF873D79AC6533833",
+  "solc": "0.8.20",
+  "verified": true
 }
+
+

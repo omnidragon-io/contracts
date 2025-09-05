@@ -9,8 +9,8 @@ This folder contains deployment information for the OmniDragon OFT token and cro
 
 - Name: Dragon
 - Symbol: DRAGON
-- Address (same on all chains): `0x69821FFA2312253209FdabB3D84f034B697E7777`
-- Registry (same on all chains): `0x6949936442425f4137807Ac5d269e6Ef66d50777`
+- Address (same on all chains): `0x69dc1c36f8b26db3471acf0a6469d815e9a27777`
+- Registry (same on all chains): `0x6940aDc0A505108bC11CA28EefB7E3BAc7AF0777`
 - Standard: ERC-20 + LayerZero V2 OFT
 
 ### LayerZero V2 EIDs
@@ -27,11 +27,11 @@ This folder contains deployment information for the OmniDragon OFT token and cro
 
 | Chain | OmniDragonJackpotVault | veDRAGONRevenueDistributor |
 |------|---------------------|----------------------------|
-| Sonic | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
-| Arbitrum | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
-| Ethereum | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
-| Base | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
-| Avalanche | `0x69352F6940529E00ccc6669606721b07BC659777` | (TBD) |
+| Sonic | `` | (TBD) |
+| Arbitrum | `` | (TBD) |
+| Ethereum | `` | (TBD) |
+| Base | `` | (TBD) |
+| Avalanche | `` | (TBD) |
 
 Wrapped native set txs:
 - Sonic (WS): 0x2b656fb35ae1b8baa1b9039547cf87d2ced5c6f8e4b333c7560b1ed7e4b2b673
@@ -42,18 +42,17 @@ Wrapped native set txs:
 
 ### Vanity Core Addresses
 
-- OmniDragonPriceOracle (all chains): `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
-- OmniDragonPrimaryOracle (Sonic only): `0x69773eC63Bf4b8892fDEa30D07c91E205866e777`
-- veDRAGON (all chains, initialize after deploy): `0x6982e7747b0f833C2c5b07aD45D228734c145777`
-- OmniDragonJackpotVault (all chains): `0x69352F6940529E00ccc6669606721b07BC659777`
+
+- veDRAGON (all chains, initialize after deploy): ``
+- OmniDragonJackpotVault (all chains): ``
 
 ### Registry Oracle Settings
 
 PriceOracle registered per chain (registry `getPriceOracle(chainId)`):
-- 42161 (Arbitrum) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
-- 1 (Ethereum) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
-- 8453 (Base) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
-- 43114 (Avalanche) → `0x69aaB98503216E16EC72ac3F4B8dfc900cC27777`
+- 42161 (Arbitrum) → ``
+- 1 (Ethereum) → ``
+- 8453 (Base) → ``
+- 43114 (Avalanche) → ``
 
 lzRead channel IDs set in registry:
 - 146 → 30332, 42161 → 30110, 1 → 30101, 8453 → 30184, 43114 → 30106
@@ -63,7 +62,7 @@ lzRead channel IDs set in registry:
 1) Quote fee (example Sonic → Arbitrum 69,420 DRAGON):
 
 ```bash
-TOKEN=0x69821FFA2312253209FdabB3D84f034B697E7777
+TOKEN=
 TO=0xDDd0050d1E084dFc72d5d06447Cc10bcD3fEF60F
 TO_B32=0x000000000000000000000000ddd0050d1e084dfc72d5d06447cc10bcd3fef60f
 DST=30110 # Arbitrum EID
@@ -105,7 +104,7 @@ Notes:
 | ChainlinkVRFIntegratorV2_5 | BSC | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
 | ChainlinkVRFIntegratorV2_5 | Avalanche | `0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5` |
 | OmniDragonVRFConsumerV2_5 | Arbitrum | `0x697a9d438a5b61ea75aa823f98a85efb70fd23d5` |
-| OmniDragonRegistry | All Chains | `0x6949936442425f4137807Ac5d269e6Ef66d50777` |
+| OmniDragonRegistry | All Chains | `` |
 
 ### System Status: ✅ FULLY OPERATIONAL
 
