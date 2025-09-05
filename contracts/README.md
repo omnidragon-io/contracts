@@ -250,3 +250,5 @@ npx hardhat verify --network sonic <CONTRACT_ADDRESS>
 
 ---
 
+0xakita.eth
+
