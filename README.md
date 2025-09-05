@@ -1,207 +1,69 @@
 # OmniDragon Ecosystem
 
-A comprehensive cross-chain DeFi ecosystem built on LayerZero V2, featuring omnichain tokens, decentralized randomness, lottery systems, and oracle infrastructure.
+A cross-chain DeFi protocol built on LayerZero V2 with omnichain tokens, VRF randomness, lottery systems, and oracle infrastructure.
 
-## Overview
+## 🚀 Quick Start
 
-OmniDragon is a multi-chain DeFi protocol that leverages LayerZero's omnichain messaging to create seamless cross-chain experiences. The ecosystem includes:
+**Prerequisites:** Node.js 18+, Foundry, pnpm/npm
 
-- **OmniDRAGON**: Omnichain Fungible Token (OFT) deployed across 6+ chains
-- **Cross-Chain VRF**: Decentralized randomness using Chainlink VRF v2.5
-- **Lottery System**: Cross-chain jackpot and lottery functionality
-- **Oracle Infrastructure**: Price feeds and data aggregation
-- **Governance**: veDRAGON voting and revenue distribution
-- **Bridge Integration**: Seamless token transfers across chains
-
-📚 **Learn more**: Visit our [comprehensive documentation](https://docs.omnidragon.io) for detailed guides and API references.
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+
-- Foundry (for smart contracts)
-- pnpm or npm
-
-### Installation
 ```bash
-# Clone the repository
 git clone <repository-url>
-cd layerzero-cli-workspace
-
-# Install dependencies
-pnpm install
-forge install
-
-# Setup environment
+cd omnidragon-core
+pnpm install && forge install
 cp .env.example .env
-# Configure your RPC URLs and private keys
 ```
 
-### Deploy Contracts
+📚 **Documentation**: [docs.omnidragon.io](https://docs.omnidragon.io)
+
+## 🏗️ Architecture
+
+**Core Components:**
+- **OmniDRAGON**: ERC-20 OFT token across 6+ chains
+- **VRF System**: Chainlink V2.5 + LayerZero randomness
+- **Lottery**: Cross-chain jackpot pools with VRF fairness
+- **Oracles**: Multi-source price feeds via LayerZero
+- **Governance**: veDRAGON voting system
+
+**Supported Chains:**
+- Ethereum, Arbitrum, Base, Avalanche, Sonic
+- BSC (planned)
+
+📚 **Technical Details**: [docs.omnidragon.io](https://docs.omnidragon.io)
+
+## 🛠️ Development
+
+**Testing:**
 ```bash
-# Deploy OmniDRAGON token
-cd deploy/OmniDragonOFT/
-npx hardhat run scripts/deploy.ts --network sonic
-
-# Deploy VRF system
-cd deploy/OmniDragonVRF/
-npx hardhat run scripts/deploy-vrf.ts --network sonic
+forge test                    # Run all tests
+forge test --gas-report      # With gas reporting
 ```
 
-📚 **Need help?** Check our [deployment documentation](https://docs.omnidragon.io/deployment) for step-by-step guides.
-
-## Project Structure
-
-```
-├── contracts/                 # Smart contracts
-│   ├── core/
-│   │   ├── tokens/           # OmniDRAGON OFT token
-│   │   ├── lottery/          # Lottery manager contracts
-│   │   ├── oracles/          # Oracle infrastructure
-│   │   ├── vrf/             # Cross-chain VRF system
-│   │   └── governance/      # veDRAGON governance
-│   └── interfaces/          # Contract interfaces
-├── deploy/                   # Deployment scripts and configs
-├── test/                     # Test suites
-├── deployments/              # Deployment records and addresses
-├── docs/                     # Documentation
-└── scripts/                  # Utility scripts
-```
-
-## Core Components
-
-### OmniDRAGON Token (OFT)
-- **Symbol**: DRAGON
-- **Standard**: ERC-20 + LayerZero V2 OFT
-- **Address**: `0x69dc1c36f8b26db3471acf0a6469d815e9a27777` (same on all chains)
-- **Chains**: Ethereum, Arbitrum, Base, Avalanche, Sonic, BSC
-
-### Cross-Chain VRF System
-- **Technology**: Chainlink VRF v2.5 + LayerZero V2
-- **Coordinator**: `0x3C0Ca683b403E37668AE3DC4FB62F4B29B6f7a3e` (Arbitrum)
-- **Supported Chains**: Sonic, Arbitrum, Ethereum, BSC, Avalanche
-
-### Lottery System
-- **Contract**: OmniDragonLotteryManager
-- **Features**: Cross-chain jackpot pools, automated draws
-- **Integration**: VRF-powered randomness for fair draws
-
-📚 **Explore**: Learn about our [lottery mechanics](https://docs.omnidragon.io/lottery) and jackpot systems.
-
-## Supported Chains
-
-| Chain | EID | Status | Explorer |
-|-------|-----|--------|----------|
-| Ethereum | 30101 | Deployed | [Etherscan](https://etherscan.io) |
-| Arbitrum | 30110 | Deployed | [Arbiscan](https://arbiscan.io) |
-| Base | 30184 | Deployed | [BaseScan](https://basescan.org) |
-| Avalanche | 30106 | Deployed | [SnowScan](https://snowscan.xyz) |
-| Sonic | 30332 | Deployed | [SonicScan](https://sonicscan.org) |
-| BSC | 30102 | Planned | [BscScan](https://bscscan.com) |
-
-📚 **Chain Details**: See our [multi-chain documentation](https://docs.omnidragon.io/chains) for deployment addresses and configurations.
-
-## Development
-
-### Testing
+**Deployment:**
 ```bash
-# Run all tests
-forge test
-
-# Run specific test file
-forge test --match-path test/OmniDragonOFT.t.sol
-
-# Run with gas reporting
-forge test --gas-report
+npx hardhat run scripts/deploy.ts --network <chain>
+npx hardhat verify --network <chain> <CONTRACT_ADDRESS>
 ```
 
-### Deployment
-```bash
-# Deploy to specific network
-npx hardhat run scripts/deploy.ts --network arbitrum
+## 📚 Resources
 
-# Verify contracts
-npx hardhat verify --network arbitrum <CONTRACT_ADDRESS>
-```
+**Documentation:** [docs.omnidragon.io](https://docs.omnidragon.io)
 
-### Cross-Chain Testing
-```bash
-# Test VRF system health
-npx hardhat run scripts/test-vrf-system.ts --network sonic
+**Local Docs:**
+- Deployment Guide, Frontend Integration
+- VRF System, Oracle Infrastructure
 
-# Test token bridging
-npx hardhat run scripts/test-oft-bridge.ts --network sonic
-```
+**Scripts:** Token operations and VRF requests available in `/scripts/`
 
-## Documentation
+## 🛡️ Security & Contributing
 
-- [**Deployment Guide**](./docs/DEPLOYMENT.md) - Complete deployment instructions
-- [**Frontend Integration**](./docs/FRONTEND_INTEGRATION.md) - Bridge and token integration
-- [**VRF System**](./deployments/README.md) - Cross-chain randomness documentation
-- [**Oracle Deployment**](./docs/OMNIDRAGON_ORACLE_DEPLOYMENT_SUMMARY.md) - Oracle infrastructure
+**Security:** Verified contracts, multi-sig governance, comprehensive testing
 
-📚 **Full Documentation**: Visit [docs.omnidragon.io](https://docs.omnidragon.io) for comprehensive guides, API references, and tutorials.
+**Contributing:** Fork → Branch → Test → PR
 
-## Key Scripts
-
-### Token Operations
-```bash
-# Bridge tokens cross-chain
-cast send <TOKEN_ADDRESS> \
-  "send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)" \
-  "(<DST_EID>,<TO_B32>,<AMOUNT>,<AMOUNT>,0x,0x,0x)" "(<NATIVE_FEE>,0)" <TO> \
-  --value <NATIVE_FEE> \
-  --rpc-url $RPC_URL
-```
-
-### VRF Requests
-```bash
-# Get VRF quote
-npx hardhat run scripts/vrf-helper.ts --network sonic
-
-# Request randomness
-cast send 0x2BD68f5E956ca9789A7Ab7674670499e65140Bd5 \
-  "requestRandomWordsSimple(uint32)" 30110 \
-  --value 0.21ether \
-  --rpc-url $RPC_URL_SONIC
-```
-
-## Security
-
-- All contracts are verified on respective block explorers
-- Multi-sig governance for critical operations
-- Comprehensive test coverage
-- Audited smart contracts (when applicable)
-
-📚 **Security Details**: Read our [security documentation](https://docs.omnidragon.io/security) for audit reports and best practices.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## About OmniDragon
-
-OmniDragon is building the future of cross-chain DeFi by leveraging LayerZero's omnichain messaging to create seamless, secure, and efficient cross-chain experiences. Our ecosystem includes tokens, randomness, lotteries, and governance systems that work together to provide users with powerful DeFi tools across multiple blockchains.
-
-### Key Features
-- **Cross-Chain Compatibility**: Seamless transfers across 6+ chains
-- **Decentralized Randomness**: Chainlink VRF integration
-- **Fair Lotteries**: VRF-powered jackpot systems
-- **Community Governance**: veDRAGON voting system
-- **Oracle Infrastructure**: Reliable price feeds
-
-📚 **Deep Dive**: Explore our [ecosystem overview](https://docs.omnidragon.io/overview) and [architecture documentation](https://docs.omnidragon.io/architecture) for technical details.
+**License:** MIT
 
 ---
 
-**Built by the OmniDragon team**
+**Built by the OmniDragon team** 🐉
 
-*For questions or support, join our [Discord](https://discord.gg/omnidragon), visit our [documentation](https://docs.omnidragon.io), or create an issue on GitHub.*
+**Support:** [Discord](https://discord.gg/omnidragon) | [Docs](https://docs.omnidragon.io) | [GitHub Issues](https://github.com/omnidragon-io/omnifan/issues)
