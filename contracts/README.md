@@ -10,8 +10,8 @@ contracts/
 │   ├── config/                   # Configuration and registry contracts
 │   │   ├── OmniDragonRegistry.sol    # Central registry for all contracts
 │   │   └── CREATE2FactoryWithOwnership.sol # Factory for deterministic deployments
-│   ├── governance/               # Governance and voting system
-│   │   ├── GaugeController.sol       # Gauge voting controller
+│   ├── 🚧 governance/               # Governance and voting system
+│   │   ├── GaugeController.sol    # Gauge voting controller
 │   │   ├── partners/                 # Partner reward contracts
 │   │   └── voting/                   # veDRAGON voting mechanics
 │   ├── lottery/                  # Lottery and jackpot system
@@ -21,14 +21,14 @@ contracts/
 │   │   └── OmniDragonOracle.sol     # Cross-chain oracle with LayerZero
 │   ├── tokens/                   # Token contracts
 │   │   ├── omniDRAGON.sol           # Main OFT token with fees
-│   │   ├── redDRAGON.sol            # Revenue distribution token
-│   │   └── veDRAGON.sol             # Vote-escrowed governance token
+│   │   ├── 🚧 redDRAGON.sol            # UniV2 DRAGON LP in ERC-4626
+│   │   └── 🚧 veDRAGON.sol             # Vote-escrowed governance token
 │   └── vrf/                      # Cross-chain randomness
 │       ├── ChainlinkVRFIntegratorV2_5.sol # VRF request coordinator
 │       └── OmniDragonVRFConsumerV2_5.sol  # VRF response handler
 ├── interfaces/                   # Contract interfaces
 │   ├── config/                   # Configuration interfaces
-│   ├── governance/               # Governance interfaces
+│   ├── 🚧 governance/               # Governance interfaces
 │   ├── lottery/                  # Lottery system interfaces
 │   ├── oracles/                  # Oracle interfaces
 │   ├── protocols/                # External protocol interfaces
@@ -55,15 +55,19 @@ contracts/
   - Immediate fee distribution (no accumulation)
 - **Address**: `0x69dc1c36f8b26db3471acf0a6469d815e9a27777` (same on all chains)
 
-#### redDRAGON.sol
-- **Type**: ERC-4626 Omnichain vault token (in progress)
+#### redDRAGON.sol 🚧
+- **Type**: ERC-4626 Omnichain vault token of UniV2 DRAGON LP
 - **Purpose**: Revenue distribution and yield farming
 - **Features**: Auto-compounding rewards, fee collection
+- **Status**: Under construction
 
-#### veDRAGON.sol
+#### veDRAGON.sol 🚧
 - **Type**: Vote-escrowed token
 - **Purpose**: Governance and voting power
 - **Features**: Lock redDRAGON for voting power, time-weighted voting
+- **Status**: Under construction
+
+> **🔍 AUDIT READY**: All contracts except the above three (redDRAGON.sol, veDRAGON.sol, GaugeController.sol) are ready for smart contract audit.
 
 ### Lottery System (`core/lottery/`)
 
@@ -109,12 +113,13 @@ contracts/
 
 ### Governance System (`core/governance/`)
 
-#### GaugeController.sol
+#### GaugeController.sol 🚧
 - **Purpose**: veDRAGON-weighted voting for protocol parameters
 - **Features**:
   - Time-weighted voting power
   - Gauge-based reward distribution
   - Cross-chain governance signals
+- **Status**: Under construction
 
 ### Configuration (`core/config/`)
 
