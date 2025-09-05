@@ -22,13 +22,9 @@ cp .env.example .env
 - **Oracles**: Multi-source price feeds via LayerZero
 - **Governance**: veDRAGON voting system
 
-**Documentation:** [docs.omnidragon.io](https://docs.omnidragon.io)
+**Supported Chains:** Ethereum, Arbitrum, Base, Avalanche, Sonic (BSC planned)
 
-**Local Docs:**
-- Deployment Guide, Frontend Integration
-- VRF System, Oracle Infrastructure
-
-**Scripts:** Token operations and VRF requests available in `/scripts/`
+📚 **Documentation**: [docs.omnidragon.io](https://docs.omnidragon.io)
 
 ## 🛡️ Security & Contributing
 
