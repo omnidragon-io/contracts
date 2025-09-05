@@ -13,8 +13,6 @@ pnpm install && forge install
 cp .env.example .env
 ```
 
-📚 **Documentation**: [docs.omnidragon.io](https://docs.omnidragon.io)
-
 ## 🏗️ Architecture
 
 **Core Components:**
@@ -23,28 +21,6 @@ cp .env.example .env
 - **Lottery**: Cross-chain jackpot pools with VRF fairness
 - **Oracles**: Multi-source price feeds via LayerZero
 - **Governance**: veDRAGON voting system
-
-**Supported Chains:**
-- Ethereum, Arbitrum, Base, Avalanche, Sonic
-- BSC (planned)
-
-📚 **Technical Details**: [docs.omnidragon.io](https://docs.omnidragon.io)
-
-## 🛠️ Development
-
-**Testing:**
-```bash
-forge test                    # Run all tests
-forge test --gas-report      # With gas reporting
-```
-
-**Deployment:**
-```bash
-npx hardhat run scripts/deploy.ts --network <chain>
-npx hardhat verify --network <chain> <CONTRACT_ADDRESS>
-```
-
-## 📚 Resources
 
 **Documentation:** [docs.omnidragon.io](https://docs.omnidragon.io)
 
