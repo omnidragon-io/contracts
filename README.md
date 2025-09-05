@@ -2,7 +2,7 @@
 
 A cross-chain DeFi protocol built on LayerZero V2 with omnichain tokens, VRF randomness, lottery systems, and oracle infrastructure.
 
-## 🚀 Quick Start
+## Quick Start
 
 **Prerequisites:** Node.js 18+, Foundry, pnpm/npm
 
@@ -13,7 +13,7 @@ pnpm install && forge install
 cp .env.example .env
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 **Core Components:**
 - **OmniDRAGON**: ERC-20 OFT token across 6+ chains
@@ -24,7 +24,7 @@ cp .env.example .env
 
 **Documentation:** [docs.omnidragon.io](https://docs.omnidragon.io)
 
-## 🛡️ Security & Contributing
+## Security & Contributing
 
 **Security:** Verified contracts, multi-sig governance, comprehensive testing
 
@@ -34,6 +34,6 @@ cp .env.example .env
 
 ---
 
-**Built by the OmniDragon team** 🐉
+**Built by the OmniDragon team**
 
 **Support:** [Discord](https://discord.gg/omnidragon) | [Docs](https://docs.omnidragon.io) | [GitHub Issues](https://github.com/omnidragon-io/omnifan/issues)
