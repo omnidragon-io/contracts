@@ -12,7 +12,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 // Dragon ecosystem interfaces
 import {IOmniDragonLotteryManager} from "../../interfaces/lottery/IOmniDragonLotteryManager.sol";
 import {IOmniDragonRegistry} from "../../interfaces/config/IOmniDragonRegistry.sol";
-import {DragonErrors} from "../../libraries/DragonErrors.sol";
+import {DragonErrors} from "../../libraries/errors/DragonErrors.sol";
 
 // Event Categories for gas optimization
 enum EventCategory {
@@ -52,9 +52,8 @@ contract omniDRAGON is OFT, ReentrancyGuard {
   // CONSTANTS & STORAGE
   // ================================
   
-  uint256 public constant MAX_SUPPLY = 6_942_000 * 10 ** 18;
-  uint256 public constant INITIAL_SUPPLY = 6_942_000 * 10 ** 18;
-  // Removed max single transfer to avoid flagging by scanners
+  uint256 public constant MAX_SUPPLY = 69_420_000 * 10 ** 18;
+  uint256 public constant INITIAL_SUPPLY = 69_420_000 * 10 ** 18;
   uint256 public constant BASIS_POINTS = 10000;
   uint256 public constant SONIC_CHAIN_ID = 146;
   uint256 public constant MAX_FEE_BPS = 2500;
@@ -244,8 +243,6 @@ contract omniDRAGON is OFT, ReentrancyGuard {
    */
   function _transferWithSmartDetection(address from, address to, uint256 amount) internal returns (bool) {
     if (from == address(0) || to == address(0)) revert DragonErrors.ZeroAddress();
-
-    // Removed global trading enable/disable gate to avoid whitelist-like behavior
 
     // Determine if fees should be applied using smart detection
     if (_shouldApplyTradingFees(from, to, amount)) {
@@ -620,11 +617,6 @@ contract omniDRAGON is OFT, ReentrancyGuard {
     revenueDistributor = _revenueDistributor;
   }
 
-  /**
-   * @dev Set fee exclusion
-   */
-  // Removed fee exclusion setter to avoid whitelist flags
-
   // ================================
   // LAYERZERO OFT FUNCTIONS
   // ================================
@@ -647,13 +639,6 @@ contract omniDRAGON is OFT, ReentrancyGuard {
       return address(0);
     }
   }
-
-  /**
-   * @dev Emergency pause function
-   */
-  // Removed pause setter to avoid pause flags
-
-  // Emergency recovery removed for greener optics
 
   // ================================
   // VIEW FUNCTIONS

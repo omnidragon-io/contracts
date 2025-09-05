@@ -4,6 +4,20 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../../interfaces/config/IOmniDragonRegistry.sol";
 
+//
+/**
+ * @title OmniDragonRegistry
+ * @author 0xakita.eth
+ * @dev Registry for omniDRAGON deployment
+ *
+ * Provides:
+ * - Deterministic address calculation via CREATE2
+ * - Basic chain configuration storage
+ * - LayerZero configuration during deployment
+ *
+ * https://x.com/sonicreddragon
+ * https://t.me/sonicreddragon
+ */
 contract OmniDragonRegistry is IOmniDragonRegistry, Ownable {
   // Chain configuration
   mapping(uint16 => IOmniDragonRegistry.ChainConfig) private chainConfigs;
@@ -114,7 +128,10 @@ contract OmniDragonRegistry is IOmniDragonRegistry, Ownable {
   // Endpoints and mapping
   function setChainIdToEid(uint256 _chainId, uint32 _eid) external onlyOwner { chainIdToEid[_chainId] = _eid; eidToChainId[_eid] = _chainId; emit ChainIdToEidUpdated(_chainId, _eid); }
   function setLayerZeroEndpoint(uint16 _chainId, address _endpoint) external onlyOwner { if (_endpoint == address(0)) revert ZeroAddress(); layerZeroEndpoints[_chainId] = _endpoint; emit LayerZeroEndpointUpdated(_chainId, _endpoint); }
-  function getLayerZeroEndpoint(uint16 _chainId) external view returns (address) { address ep = layerZeroEndpoints[_chainId]; return ep == address(0) ? layerZeroCommonEndpoint : ep; }
+  function getLayerZeroEndpoint(uint16 _chainId) external view returns (address) {
+    address ep = layerZeroEndpoints[_chainId];
+    return ep == address(0) ? layerZeroCommonEndpoint : ep;
+  }
 
   // Lookups
   function getWrappedNativeToken(uint16 _chainId) external view override returns (address) { return chainConfigs[_chainId].wrappedNativeToken; }
@@ -129,7 +146,12 @@ contract OmniDragonRegistry is IOmniDragonRegistry, Ownable {
   function getSecondaryOracle(uint16 _chainId) external view returns (address) { return secondaryOracles[_chainId]; }
   function configurePrimaryOracle(address _primaryOracle, uint32 _chainEid) external override onlyOwner { require(_primaryOracle != address(0), "Invalid oracle address"); primaryOracle = _primaryOracle; primaryChainEid = _chainEid; priceOracles[146] = _primaryOracle; oracleConfigs[146].primaryOracle = _primaryOracle; oracleConfigs[146].primaryChainEid = _chainEid; oracleConfigs[146].isConfigured = true; emit PrimaryOracleConfigured(_primaryOracle, _chainEid); }
   function setLzReadChannel(uint16 _chainId, uint32 _channelId) external override onlyOwner { oracleConfigs[_chainId].lzReadChannelId = _channelId; emit LzReadChannelConfigured(_chainId, _channelId); }
-  function getOracleConfig(uint16 _chainId) external view returns (IOmniDragonRegistry.OracleConfig memory) { return oracleConfigs[_chainId]; }
+  function getOracleConfigByChainId(uint256 _chainId) external view returns (IOmniDragonRegistry.OracleConfig memory) {
+    return oracleConfigs[uint16(_chainId)];
+  }
+  function getOracleConfig(uint16 _chainId) external view returns (IOmniDragonRegistry.OracleConfig memory) {
+    return oracleConfigs[_chainId];
+  }
 
   // LZ helpers
   function _executeLowLevelCall(address target, bytes memory callData, string memory errorMessage) private {
@@ -138,7 +160,31 @@ contract OmniDragonRegistry is IOmniDragonRegistry, Ownable {
   }
   function configureSendLibrary(address _oapp, uint32 _eid, address _sendLib) external onlyOwner { require(_oapp!=address(0)&&_sendLib!=address(0),"bad"); address ep=layerZeroEndpoints[currentChainId]; require(ep!=address(0),"no ep"); bytes memory cd=abi.encodeWithSignature("setSendLibrary(address,uint32,address)",_oapp,_eid,_sendLib); _executeLowLevelCall(ep,cd,"lz setSendLibrary fail"); emit LayerZeroLibrarySet(_oapp,_eid,_sendLib,"Send"); }
   function configureReceiveLibrary(address _oapp, uint32 _eid, address _receiveLib, uint256 _grace) external onlyOwner { require(_oapp!=address(0)&&_receiveLib!=address(0),"bad"); address ep=layerZeroEndpoints[currentChainId]; require(ep!=address(0),"no ep"); bytes memory cd=abi.encodeWithSignature("setReceiveLibrary(address,uint32,address,uint256)",_oapp,_eid,_receiveLib,_grace); _executeLowLevelCall(ep,cd,"lz setReceiveLibrary fail"); emit LayerZeroLibrarySet(_oapp,_eid,_receiveLib,"Receive"); }
-  function configureULNConfig(address _oapp, address _lib, uint32 _eid, uint64 _conf, address[] calldata _req, address[] calldata _opt, uint8 _optTh) external onlyOwner { require(_oapp!=address(0)&&_lib!=address(0)&&_req.length>0,"bad"); address ep=layerZeroEndpoints[currentChainId]; require(ep!=address(0),"no ep"); bytes memory cfg=abi.encode(_conf,_req,_opt,_optTh); SetConfigParam[] memory params=new SetConfigParam[](1); params[0]=SetConfigParam({eid:_eid,configType:2,config:cfg}); bytes memory cd=abi.encodeWithSignature("setConfig(address,address,(uint32,uint32,bytes)[])",_oapp,_lib,params); _executeLowLevelCall(ep,cd,"lz setConfig fail"); emit LayerZeroConfigured(_oapp,_eid,"ULN_CONFIG"); }
+  function configureULNConfig(address _oapp, address _lib, uint32 _eid, uint64 _conf, address[] calldata _req, address[] calldata _opt, uint8 _optTh) external onlyOwner {
+    require(_oapp != address(0) && _lib != address(0) && _req.length > 0, "bad");
+    address ep = layerZeroEndpoints[currentChainId];
+    require(ep != address(0), "no ep");
+    // ULN V302 expects: (uint64 confirmations, uint8 requiredDVNCount, uint8 optionalDVNCount, uint8 optionalDVNThreshold, address[] requiredDVNs, address[] optionalDVNs)
+    bytes memory cfg = abi.encode(_conf, uint8(_req.length), uint8(_opt.length), _optTh, _req, _opt);
+    SetConfigParam[] memory params = new SetConfigParam[](1);
+    params[0] = SetConfigParam({ eid: _eid, configType: 2, config: cfg });
+    bytes memory cd = abi.encodeWithSignature("setConfig(address,address,(uint32,uint32,bytes)[])", _oapp, _lib, params);
+    _executeLowLevelCall(ep, cd, "lz setConfig fail");
+    emit LayerZeroConfigured(_oapp, _eid, "ULN_CONFIG");
+  }
+
+  function configureExecutorConfig(address _oapp, address _lib, uint32 _eid, uint32 _maxMsgSize, address _executor) external onlyOwner {
+    require(_oapp != address(0) && _lib != address(0) && _executor != address(0), "bad");
+    address ep = layerZeroEndpoints[currentChainId];
+    require(ep != address(0), "no ep");
+    // ExecutorConfig: (uint32 maxMessageSize, address executor)
+    bytes memory cfg = abi.encode(_maxMsgSize, _executor);
+    SetConfigParam[] memory params = new SetConfigParam[](1);
+    params[0] = SetConfigParam({ eid: _eid, configType: 1, config: cfg });
+    bytes memory cd = abi.encodeWithSignature("setConfig(address,address,(uint32,uint32,bytes)[])", _oapp, _lib, params);
+    _executeLowLevelCall(ep, cd, "lz setConfig fail");
+    emit LayerZeroConfigured(_oapp, _eid, "EXECUTOR_CONFIG");
+  }
   function batchConfigureLayerZero(address _oapp,uint32 _eid,address _sendLib,address _recvLib,uint64 _conf,address[] calldata _req) external onlyOwner { this.configureSendLibrary(_oapp,_eid,_sendLib); this.configureReceiveLibrary(_oapp,_eid,_recvLib,0); address[] memory empty=new address[](0); this.configureULNConfig(_oapp,_sendLib,_eid,_conf,_req,empty,0); this.configureULNConfig(_oapp,_recvLib,_eid,_conf,_req,empty,0); emit LayerZeroConfigured(_oapp,_eid,"BATCH_CONFIG"); }
   function configureOmniDragonPeer(address _oapp,uint32 _eid,bytes32 _peer) external onlyOwner { require(_oapp!=address(0)&&_peer!=bytes32(0),"bad"); bytes memory cd=abi.encodeWithSignature("setPeer(uint32,bytes32)",_eid,_peer); _executeLowLevelCall(_oapp,cd,"peer fail"); emit LayerZeroConfigured(_oapp,_eid,"PEER_SET"); }
   function configureOmniDragonEnforcedOptions(address _oapp, bytes[] calldata _opts) external onlyOwner { require(_oapp!=address(0)&&_opts.length>0,"bad"); bytes memory cd=abi.encodeWithSignature("setEnforcedOptions((uint32,uint16,bytes)[])",_opts); _executeLowLevelCall(_oapp,cd,"opts fail"); emit LayerZeroConfigured(_oapp,0,"ENFORCED_OPTIONS_SET"); }

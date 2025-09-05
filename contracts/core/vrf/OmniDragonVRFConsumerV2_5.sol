@@ -797,4 +797,5 @@ contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3 {
    * @dev Receive ETH for LayerZero fees
    */
   receive() external payable {}
+
 }

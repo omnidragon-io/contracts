@@ -77,7 +77,7 @@ library veDRAGONMath {
    * @param lockDuration Duration of lock in seconds
    * @return Voting power with precision
    */
-  function calculateVotingPower(uint256 amount, uint256 lockDuration) public pure returns (uint256) {
+  function calculateVotingPower(uint256 amount, uint256 lockDuration) internal pure returns (uint256) {
     if (lockDuration < MIN_LOCK_DURATION) {
       return 0;
     }
@@ -104,7 +104,7 @@ library veDRAGONMath {
     uint256 amount,
     uint256 lockEnd,
     uint256 currentTime
-  ) public pure returns (uint256) {
+  ) internal pure returns (uint256) {
     if (currentTime >= lockEnd) {
       return 0;
     }
@@ -119,7 +119,7 @@ library veDRAGONMath {
    * @param lockDuration Duration of lock in seconds
    * @return Boost multiplier with precision (1x to 4x)
    */
-  function calculateBoostMultiplier(uint256 lockDuration) public pure returns (uint256) {
+  function calculateBoostMultiplier(uint256 lockDuration) internal pure returns (uint256) {
     if (lockDuration == 0) {
       return PRECISION; // 1x
     }
@@ -142,7 +142,7 @@ library veDRAGONMath {
    * @param n The number to find the cube root of
    * @return The cube root of n, with precision
    */
-  function cubeRoot(uint256 n) public pure returns (uint256) {
+  function cubeRoot(uint256 n) internal pure returns (uint256) {
     if (n == 0) return 0;
 
     // Use improved initial guess for faster convergence
@@ -206,7 +206,7 @@ library veDRAGONMath {
    * @param amount The amount of tokens
    * @return votingPower The calculated voting power
    */
-  function calculateAdvancedVotingPower(uint256 amount) public pure returns (uint256 votingPower) {
+  function calculateAdvancedVotingPower(uint256 amount) internal pure returns (uint256 votingPower) {
     if (amount == 0) return 0;
 
     // Use cube root for more equitable voting power distribution
@@ -223,7 +223,7 @@ library veDRAGONMath {
   function calculateVotingPowerWithLock(
     uint256 lockedAmount,
     uint256 lockDuration
-  ) public pure returns (uint256 votingPower) {
+  ) internal pure returns (uint256 votingPower) {
     if (lockedAmount == 0) return 0;
 
     // Ensure lock duration is capped at MAX_LOCK_TIME
@@ -278,7 +278,7 @@ library veDRAGONMath {
   function calculateAdvancedBoostMultiplier(
     uint256 votingPower,
     uint256 maxBoostBps
-  ) public pure returns (uint256 boostMultiplier) {
+  ) internal pure returns (uint256 boostMultiplier) {
     // If no voting power, return base boost (1.0x)
     if (votingPower == 0) return BASE_BOOST_BPS;
 
@@ -306,7 +306,7 @@ library veDRAGONMath {
     uint256 userBalance,
     uint256 totalSupply,
     uint256 maxBoostBps
-  ) public pure returns (uint256 multiplier) {
+  ) internal pure returns (uint256 multiplier) {
     if (userBalance == 0 || totalSupply == 0) {
       return BASE_BOOST_BPS; // Default to base boost if no balance
     }
@@ -343,7 +343,7 @@ library veDRAGONMath {
     uint256 /* swapAmount */,
     uint256 baseWinProbability,
     uint256 votingPower
-  ) public pure returns (uint256 boostedProbability) {
+  ) internal pure returns (uint256 boostedProbability) {
     // Get boost multiplier (10000 = 1.0x, 25000 = 2.5x)
     uint256 boostMultiplier = calculateAdvancedBoostMultiplier(votingPower, MAX_BOOST_BPS);
 
@@ -364,7 +364,7 @@ library veDRAGONMath {
   function calculateWinThreshold(
     uint256 swapAmountUSD,
     uint256 veDRAGONBalance
-  ) public pure returns (uint256 threshold) {
+  ) internal pure returns (uint256 threshold) {
     // Calculate base win probability
     uint256 winProbabilityBPS;
 
@@ -419,7 +419,7 @@ library veDRAGONMath {
   function calculateJackpotPayoutPercentage(
     uint256 jackpotSize,
     uint256 marketConditionFactor
-  ) public pure returns (uint256 payoutBps) {
+  ) internal pure returns (uint256 payoutBps) {
     // Start with base payout (69%)
     uint256 basePayout = BASE_JACKPOT_PAYOUT_BPS;
     uint256 reduction = 0;
@@ -479,7 +479,7 @@ library veDRAGONMath {
     uint256 lastWinTimestamp,
     uint256 numStakers,
     uint256 marketVolatility
-  ) public view returns (uint256 jackpotBps, uint256 lpBps, uint256 burnBps) {
+  ) internal view returns (uint256 jackpotBps, uint256 lpBps, uint256 burnBps) {
     // Calculate market-based adjustments
     (int256 jackpotAdjustment, int256 lpAdjustment) = _calculateMarketAdjustments(
       lpTVL,
@@ -627,7 +627,7 @@ library veDRAGONMath {
    * @param lockDuration Duration to lock for in seconds
    * @return lockEnd Timestamp when lock will expire
    */
-  function calculateLockEnd(uint256 currentTime, uint256 lockDuration) public pure returns (uint256 lockEnd) {
+  function calculateLockEnd(uint256 currentTime, uint256 lockDuration) internal pure returns (uint256 lockEnd) {
     // Ensure lock duration is capped at MAX_LOCK_TIME
     lockDuration = Math.min(lockDuration, MAX_LOCK_TIME);
 
@@ -642,7 +642,7 @@ library veDRAGONMath {
    * @param timeInSeconds Time in seconds
    * @return weeksCount Number of weeks
    */
-  function secondsToWeeks(uint256 timeInSeconds) public pure returns (uint256 weeksCount) {
+  function secondsToWeeks(uint256 timeInSeconds) internal pure returns (uint256 weeksCount) {
     return timeInSeconds / WEEK;
   }
 
@@ -651,7 +651,7 @@ library veDRAGONMath {
    * @param weeksCount Number of weeks
    * @return timeInSeconds Time in seconds
    */
-  function weeksToSeconds(uint256 weeksCount) public pure returns (uint256 timeInSeconds) {
+  function weeksToSeconds(uint256 weeksCount) internal pure returns (uint256 timeInSeconds) {
     return weeksCount * WEEK;
   }
 
@@ -661,7 +661,7 @@ library veDRAGONMath {
    * @notice Legacy function name for calculateVotingPower
    * @dev Maintains backward compatibility
    */
-  function calculateLinearVotingPower(uint256 amount, uint256 lockDuration) public pure returns (uint256) {
+  function calculateLinearVotingPower(uint256 amount, uint256 lockDuration) internal pure returns (uint256) {
     return calculateVotingPower(amount, lockDuration);
   }
 
@@ -673,7 +673,7 @@ library veDRAGONMath {
     uint256 amount,
     uint256 lockEnd,
     uint256 currentTime
-  ) public pure returns (uint256) {
+  ) internal pure returns (uint256) {
     return calculateDecayedVotingPower(amount, lockEnd, currentTime);
   }
 }

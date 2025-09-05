@@ -9,6 +9,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 
 import {IChainlinkVRFIntegratorV2_5} from "../../interfaces/vrf/IChainlinkVRFIntegratorV2_5.sol";
 import {IOmniDragonVRFConsumerV2_5} from "../../interfaces/vrf/IOmniDragonVRFConsumerV2_5.sol";
+import {DragonJackpotVault} from "./DragonJackpotVault.sol";
 
 // Interface for local VRF callbacks
 interface IVRFCallbackReceiver {
@@ -16,8 +17,18 @@ interface IVRFCallbackReceiver {
 }
 import {MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import {IOmniDragonPriceOracle} from "../../interfaces/oracles/IOmniDragonPriceOracle.sol";
+import {IOmniDragonOracle} from "../../interfaces/oracles/IOmniDragonOracle.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+interface IveDRAGON {
+  function getVotingPower(address user) external view returns (uint256);
+}
 import {IveDRAGONBoostManager} from "../../interfaces/governance/voting/IveDRAGONBoostManager.sol";
+
+interface IPriceOracleLike {
+  function getLatestPrice() external view returns (int256 price, uint256 timestamp); // TOKEN/USD 1e18
+}
 
 // ============ INTERFACES ============
 
@@ -25,65 +36,58 @@ interface IveDRAGONToken {
   function lockedEnd(address user) external view returns (uint256);
   function balanceOf(address user) external view returns (uint256);
   function totalSupply() external view returns (uint256);
+  function locked(address user) external view returns (uint256 amount, uint256 unlockTime);
 }
 
-// ============ INTERFACES ============
-
-interface IDragonJackpotVault {
-  function getJackpotBalance() external view returns (uint256 balance);
-  function payJackpot(address winner, uint256 amount) external;
-  function getLastWinTime() external view returns (uint256 timestamp);
+interface IredDRAGON {
+  function convertToAssets(uint256 shares) external view returns (uint256 assets);
+  function balanceOf(address account) external view returns (uint256);
+  function asset() external view returns (address);
 }
+
+interface IUniswapV2Pair {
+  function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+  function totalSupply() external view returns (uint256);
+  function token0() external view returns (address);
+  function token1() external view returns (address);
+}
+
+
 
 /**
  * @title OmniDragonLotteryManager
  * @author 0xakita.eth
- * @dev Manages instantaneous per-swap lottery system for OmniDragon ecosystem
+ * @dev Enhanced lottery manager with efficient oracle price updates and improved VRF integration
  *
- * https://x.com/sonicreddragon
- * https://t.me/sonicreddragon
- *
- * FEATURES:
- * - Per-swap lottery entries with linear probability scaling
- * - veDRAGON boost integration using Curve Finance formula
- * - Three secure VRF randomness sources: Local VRF, Cross-chain VRF, and Provider randomness
- * - Position-based boost capping to prevent exploitation
- * - Rate limiting and DoS protection
- * - Pull payment mechanism for failed prize transfers
- *
- * SECURITY:
- * - All randomness sources are cryptographically secure (VRF only)
- * - No exploitable pseudo-randomness functions
- * - ReentrancyGuard protection on all external functions
- * - Comprehensive access control system
+ * Key improvements:
+ * - Calls updatePrice() on primary oracle before price queries for fresh data
+ * - Better VRF integration with ChainlinkVRFIntegratorV2_5
+ * - Gas-optimized lottery processing functions
+ * - Enhanced error handling and fallback mechanisms
  *
  * https://x.com/sonicreddragon
  * https://t.me/sonicreddragon
  */
-contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackReceiver {
+contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, Pausable, IVRFCallbackReceiver {
   using SafeERC20 for IERC20;
   using Address for address payable;
 
   // ============ CONSTANTS ============
 
-  uint256 public constant MIN_SWAP_INTERVAL = 7; // 7 seconds between swaps per user to prevent spam
   uint256 public constant MAX_BOOST_BPS = 25000; // 2.5x boost maximum
   uint256 public constant MAX_WIN_PROBABILITY_PPM = 100000; // 10% maximum win probability (100,000 PPM)
 
   // Instant lottery configuration (USD-based with 6 decimals)
   uint256 public constant MIN_SWAP_USD = 10e6; // $10 USD minimum
-  uint256 public constant MAX_PROBABILITY_SWAP_USD = 10000e6; // $10,000 USD for max probability (not a trade limit)
+  uint256 public constant MAX_PROBABILITY_SWAP_USD = 10000e6; // $10,000 USD for max probability
   uint256 public constant MIN_WIN_CHANCE_PPM = 40; // 0.004% (40 parts per million) at $10
   uint256 public constant MAX_WIN_CHANCE_PPM = 40000; // 4% (40,000 parts per million) at $10,000+
 
-  // Using Parts Per Million (PPM) for precise probability control
-  // 1 PPM = 0.0001% = 1/1,000,000
-  // 40 PPM = 0.004%, 40,000 PPM = 4%
-
   // veDRAGON boost configuration
   uint256 public constant BOOST_PRECISION = 1e18;
-  uint256 public constant MAX_BOOST = 25e17; // 2.5x maximum boost
-  uint256 public constant MIN_BOOST = 1e18; // 1.0x minimum boost (no boost)
+
+  // Oracle price updates happen on every swap for maximum freshness
+  uint256 public maxPriceUpdateGas = 500000; // Max gas for updatePrice call (adjustable)
 
   // ============ ENUMS ============
 
@@ -95,11 +99,11 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   // ============ STRUCTS ============
 
   struct InstantLotteryConfig {
-    uint256 baseWinProbability; // Base probability in PPM (parts per million) - UNUSED, kept for compatibility
     uint256 minSwapAmount; // Minimum swap amount to qualify (in USD, scaled by 1e6)
     uint256 rewardPercentage; // Percentage of jackpot as reward (in basis points)
     bool isActive;
     bool useVRFForInstant; // Whether to use VRF for instant lotteries (recommended)
+    bool enablePriceUpdates; // Whether to call updatePrice() on oracle before lottery processing
   }
 
   struct UserStats {
@@ -119,10 +123,6 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     RandomnessSource randomnessSource;
   }
 
-  // Constants for state growth management
-  uint256 public constant MAX_PENDING_ENTRY_AGE = 24 hours; // Max age before entry can be cleaned up
-  uint256 public constant CLEANUP_BATCH_SIZE = 50; // Max entries to clean in one transaction
-
   // ============ STATE VARIABLES ============
 
   // Core dependencies
@@ -133,25 +133,24 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   // VRF integrations
   IChainlinkVRFIntegratorV2_5 public vrfIntegrator;
   IOmniDragonVRFConsumerV2_5 public localVRFConsumer;
-  IDragonJackpotVault public jackpotVault;
-
-  // Chain-specific multiplier
-  uint256 public chainMultiplier = 1e18; // 1.0x by default
+  DragonJackpotVault public jackpotVault;
 
   // Market infrastructure integration
-  IOmniDragonPriceOracle public priceOracle;
+  IOmniDragonOracle public primaryOracle; // Used on Sonic chain (146)
+  address public priceOracle; // Used on other chains (OmniDragonPriceOracle with LayerZero Read)
   uint256 public immutable CHAIN_ID;
+  uint256 public constant SONIC_CHAIN_ID = 146; // Sonic blockchain chain ID
 
-  // Prize configuration removed - rewards are now dynamic based on jackpot vault balance
+  // Oracle optimization
+  uint256 public lastPriceUpdate;
 
-  // Rate limiting
-  mapping(address => uint256) public lastSwapTime;
+  // Rate limiting removed
 
   // Access control
   mapping(address => bool) public authorizedSwapContracts;
 
   // Lottery state
-  mapping(uint256 => PendingLotteryEntry) public pendingEntries;
+  mapping(bytes32 => PendingLotteryEntry) public pendingEntries;
   mapping(address => UserStats) public userStats;
 
   // Statistics
@@ -161,12 +160,15 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
 
   InstantLotteryConfig public instantLotteryConfig;
 
-  // Oracle integration
-  IERC20 public dragonToken;
+  // LayerZero configuration
+  uint32 public targetEid = 30110; // Default to Arbitrum mainnet, configurable
+  
+  // Token price oracle mapping
+  mapping(address => address) public tokenUsdOracle;
 
   // ============ EVENTS ============
 
-  event InstantLotteryProcessed(address indexed user, uint256 swapAmount, bool won, uint256 reward);
+  event InstantLotteryProcessed(address indexed user, uint256 swapAmount, bool won, uint256 rewardInJackpotUnits);
   event InstantLotteryEntered(
     address indexed user,
     uint256 swapAmountUSD,
@@ -185,44 +187,71 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
 
   // Configuration events
   event InstantLotteryConfigured(
-    uint256 baseWinProbability,
     uint256 minSwapAmount,
     uint256 rewardPercentage,
-    bool isActive
+    bool isActive,
+    bool enablePriceUpdates
   );
   event SwapContractAuthorized(address indexed swapContract, bool authorized);
   event LotteryManagerInitialized(address jackpotVault, address veDRAGONToken);
-  event PriceOracleUpdated(address indexed newPriceOracle);
-  event ChainMultiplierUpdated(uint256 oldMultiplier, uint256 newMultiplier);
+  event PrimaryOracleUpdated(address indexed primaryOracle);
+  event PriceOracleUpdated(address indexed priceOracle);
+  event VRFFunded(address indexed funder, uint256 amount);
+
   event RedDRAGONTokenUpdated(address indexed redDRAGONToken);
-  // Fixed prize events removed - rewards are now purely dynamic
+  event OraclePriceUpdateAttempted(address indexed oracle, bool success, uint256 gasUsed);
+  event TokenUsdOracleSet(address indexed token, address indexed oracle);
+
+  event VeDRAGONTokenUpdated(address indexed oldToken, address indexed newToken);
+  event VeDRAGONBoostManagerUpdated(address indexed oldManager, address indexed newManager);
+  event FeeMRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+  event ExcessRefunded(address indexed recipient, uint256 amount);
+
+  // Debugging and observability events
+  event SwapEntrySkipped(
+    string reason,
+    uint256 finalSwapAmountUSD,
+    bool priceObtained,
+    uint256 vrfFeeRequired,
+    uint256 managerNativeBalance
+  );
+  event VRFRequestFailed(uint256 requiredFee, uint256 availableBalance);
 
   // ============ CONSTRUCTOR ============
 
   constructor(
-    address _jackpotVault,
+    address payable _jackpotVault,
     address _veDRAGONToken,
-    address _priceOracle,
+    address payable _oracleAddress,
     uint256 _chainId
   ) Ownable(msg.sender) {
     require(_jackpotVault != address(0), "Invalid jackpot vault");
     require(_veDRAGONToken != address(0), "Invalid veDRAGON token");
-    require(_priceOracle != address(0), "Invalid price oracle");
+    require(_oracleAddress != address(0), "Invalid oracle address");
 
-    jackpotVault = IDragonJackpotVault(_jackpotVault);
+    jackpotVault = DragonJackpotVault(_jackpotVault);
     veDRAGONToken = IERC20(_veDRAGONToken);
-    priceOracle = IOmniDragonPriceOracle(_priceOracle);
-    // veDRAGONBoostManager will be set via setter function after deployment
 
     CHAIN_ID = _chainId;
 
-    // Initialize instant lottery config using PPM constants
+    // Smart oracle assignment based on chain
+    if (_chainId == SONIC_CHAIN_ID) {
+      // On Sonic: Use PrimaryOracle directly (source of truth)
+      primaryOracle = IOmniDragonOracle(_oracleAddress);
+      priceOracle = address(0); // Not needed on Sonic
+    } else {
+      // On other chains: Use PriceOracle with LayerZero Read
+      primaryOracle = IOmniDragonOracle(address(0)); // Not available on other chains
+      priceOracle = _oracleAddress; // OmniDragonPriceOracle address
+    }
+
+    // Initialize instant lottery config with enhanced settings
     instantLotteryConfig = InstantLotteryConfig({
-      baseWinProbability: MIN_WIN_CHANCE_PPM,
       minSwapAmount: MIN_SWAP_USD,
       rewardPercentage: 6900, // 69% of jackpot
       isActive: true,
-      useVRFForInstant: true
+      useVRFForInstant: true,
+      enablePriceUpdates: true // Enable automatic price updates
     });
 
     emit LotteryManagerInitialized(_jackpotVault, _veDRAGONToken);
@@ -235,11 +264,7 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     _;
   }
 
-  modifier rateLimited(address user) {
-    require(block.timestamp >= lastSwapTime[user] + MIN_SWAP_INTERVAL, "Swap too frequent");
-    lastSwapTime[user] = block.timestamp;
-    _;
-  }
+  // Rate limiting removed to prevent reverts
 
   // ============ ADMIN FUNCTIONS ============
 
@@ -269,21 +294,23 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     }
   }
 
-  function setJackpotVault(address _jackpotVault) external onlyOwner {
+  function setJackpotVault(address payable _jackpotVault) external onlyOwner {
     require(_jackpotVault != address(0), "Invalid jackpot vault");
-    jackpotVault = IDragonJackpotVault(_jackpotVault);
+    jackpotVault = DragonJackpotVault(_jackpotVault);
+  }
+
+  function setPrimaryOracle(address payable _primaryOracle) external onlyOwner {
+    require(_primaryOracle != address(0), "Invalid oracle address");
+    require(CHAIN_ID == SONIC_CHAIN_ID, "Primary oracle only available on Sonic");
+    primaryOracle = IOmniDragonOracle(_primaryOracle);
+    emit PrimaryOracleUpdated(_primaryOracle);
   }
 
   function setPriceOracle(address _priceOracle) external onlyOwner {
-    priceOracle = IOmniDragonPriceOracle(_priceOracle);
+    require(_priceOracle != address(0), "Invalid price oracle address");
+    require(CHAIN_ID != SONIC_CHAIN_ID, "Price oracle not needed on Sonic");
+    priceOracle = _priceOracle;
     emit PriceOracleUpdated(_priceOracle);
-  }
-
-  function setChainMultiplier(uint256 _chainMultiplier) external onlyOwner {
-    require(_chainMultiplier > 0, "Invalid chain multiplier");
-    uint256 oldMultiplier = chainMultiplier;
-    chainMultiplier = _chainMultiplier;
-    emit ChainMultiplierUpdated(oldMultiplier, _chainMultiplier);
   }
 
   function setRedDRAGONToken(address _redDRAGONToken) external onlyOwner {
@@ -294,7 +321,9 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
 
   function setVeDRAGONBoostManager(address _veDRAGONBoostManager) external onlyOwner {
     require(_veDRAGONBoostManager != address(0), "Invalid veDRAGON boost manager");
+    address oldManager = address(veDRAGONBoostManager);
     veDRAGONBoostManager = IveDRAGONBoostManager(_veDRAGONBoostManager);
+    emit VeDRAGONBoostManagerUpdated(oldManager, _veDRAGONBoostManager);
   }
 
   function setAuthorizedSwapContract(address swapContract, bool authorized) external onlyOwner {
@@ -304,286 +333,155 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   }
 
   function configureInstantLottery(
-    uint256 _baseWinProbability,
     uint256 _minSwapAmount,
     uint256 _rewardPercentage,
     bool _isActive,
-    bool _useVRFForInstant
+    bool _useVRFForInstant,
+    bool _enablePriceUpdates
   ) external onlyOwner {
-    require(_baseWinProbability <= 10000, "Invalid base win probability");
     require(_rewardPercentage <= 10000, "Invalid reward percentage");
 
     instantLotteryConfig = InstantLotteryConfig({
-      baseWinProbability: _baseWinProbability,
       minSwapAmount: _minSwapAmount,
       rewardPercentage: _rewardPercentage,
       isActive: _isActive,
-      useVRFForInstant: _useVRFForInstant
+      useVRFForInstant: _useVRFForInstant,
+      enablePriceUpdates: _enablePriceUpdates
     });
 
-    emit InstantLotteryConfigured(_baseWinProbability, _minSwapAmount, _rewardPercentage, _isActive);
+    emit InstantLotteryConfigured(_minSwapAmount, _rewardPercentage, _isActive, _enablePriceUpdates);
   }
+
+  // ============ ENHANCED ORACLE INTEGRATION ============
+
+  /**
+   * @notice Always update oracle price on every swap
+   * @dev Calls updatePrice() on every swap for freshest data
+   * @return wasUpdated Whether the price was actually updated
+   */
+  function _updateOraclePriceEverySwap() internal returns (bool wasUpdated) {
+    // Allow disabling direct oracle updates via config to prevent swap path reverts
+    if (!instantLotteryConfig.enablePriceUpdates) {
+      return true;
+    }
+    // On Sonic: Update primary oracle directly
+    if (CHAIN_ID == SONIC_CHAIN_ID && address(primaryOracle) != address(0)) {
+      uint256 gasStart = gasleft();
+      
+      // Do not decode any return value to avoid ABI mismatch issues
+      try primaryOracle.updatePrice{gas: maxPriceUpdateGas}() {
+        lastPriceUpdate = block.timestamp;
+        uint256 gasUsed = gasStart - gasleft();
+        emit OraclePriceUpdateAttempted(address(primaryOracle), true, gasUsed);
+        return true;
+      } catch {
+        uint256 gasUsed = gasStart - gasleft();
+        emit OraclePriceUpdateAttempted(address(primaryOracle), false, gasUsed);
+        return false;
+      }
+    }
+    
+    // On other chains: Price oracle gets updates via LayerZero Read automatically
+    // No direct updatePrice() call needed - price is fetched when requested
+    return true;
+  }
+
+
 
   // ============ LOTTERY FUNCTIONS ============
-
   /**
-   * @notice Process lottery entry from omniDRAGON swap (backward compatibility)
-   * @param user Address of the user performing the swap
-   * @param amount DRAGON token amount (18 decimals)
-   */
-  function processEntry(address user, uint256 amount) external nonReentrant onlyAuthorizedSwapContract {
-    // Only process lottery if we have a price oracle and can get accurate USD conversion
-    if (address(priceOracle) == address(0)) {
-      // No price oracle configured - swap succeeds but no lottery entry
-      return;
-    }
-
-    uint256 swapAmountUSD;
-    bool priceObtained = false;
-
-    try priceOracle.getAggregatedPrice() returns (int256 price, bool success, uint256 /* timestamp */) {
-      if (success && price > 0) {
-        // Convert token amount to USD using actual oracle price
-        // Price is typically in 8 decimals, amount is 18 decimals, want 6 decimals USD
-        // So: (amount * price) / 1e20 = (18 + 8 - 20 = 6 decimals)
-        swapAmountUSD = (amount * uint256(price)) / 1e20;
-        priceObtained = true;
-      }
-    } catch {
-      // Oracle failed - swap succeeds but no lottery entry
-    }
-    // Only process lottery if we got a valid price and swap meets minimum threshold
-    if (priceObtained && swapAmountUSD >= MIN_SWAP_USD) {
-      // Process the instant lottery with actual USD amount from price oracle
-      processInstantLottery(user, swapAmountUSD);
-    }
-    // If no valid price or below minimum, swap succeeds but no lottery entry is created
-  }
-
-  /**
-   * @notice Process swap lottery - handles all lottery logic including USD calculation
-   * @param trader Address of the trader
-   * @param tokenIn Address of input token  
-   * @param amountIn Amount of input tokens
-   * @param swapValueUSD USD value (0 = calculate internally using oracle)
-   * @return entryId Generated lottery entry ID
+   * @notice Main swap lottery processing with automatic price updates and VRF fee handling
+   * @dev Simplified single lottery type with unified boost calculation via veDRAGONBoostManager
    */
   function processSwapLottery(
     address trader,
     address tokenIn,
     uint256 amountIn,
     uint256 swapValueUSD
-  ) external nonReentrant onlyAuthorizedSwapContract returns (uint256 entryId) {
+  ) external payable nonReentrant onlyAuthorizedSwapContract whenNotPaused returns (uint256 entryId) {
     require(trader != address(0), "Invalid trader address");
     require(tokenIn != address(0), "Invalid token address");
     require(amountIn > 0, "Invalid amount");
 
-    // Only process lottery if we have a price oracle and can get accurate USD conversion
-    if (address(priceOracle) == address(0)) {
-      // No price oracle configured - swap succeeds but no lottery entry
+    // Step 1: Always update oracle price on every swap
+    bool oracleUpdateSuccess = _updateOraclePriceEverySwap();
+    
+    // FIX 3: Check oracle update result
+    if (instantLotteryConfig.enablePriceUpdates && !oracleUpdateSuccess) {
+      emit SwapEntrySkipped("oracle_update_failed", 0, false, 0, address(this).balance);
       return 0;
     }
 
     uint256 finalSwapAmountUSD = swapValueUSD;
     bool priceObtained = false;
 
-    // If swapValueUSD is 0, calculate USD value using oracle
+    // Step 2: Calculate USD value using fresh oracle data
     if (swapValueUSD == 0) {
-      try priceOracle.getAggregatedPrice() returns (int256 price, bool success, uint256 /* timestamp */) {
-        if (success && price > 0) {
-          // Convert token amount to USD using actual oracle price
-          // Price is typically in 8 decimals, amount is 18 decimals, want 6 decimals USD
-          // So: (amountIn * price) / 1e20 = (18 + 8 - 20 = 6 decimals)
-          finalSwapAmountUSD = (amountIn * uint256(price)) / 1e20;
-          priceObtained = true;
-        }
-      } catch {
-        // Oracle failed - swap succeeds but no lottery entry
-        return 0;
+      // Try token-specific oracle first
+      if (tokenUsdOracle[tokenIn] != address(0)) {
+        finalSwapAmountUSD = _amountToUsd1e6(tokenIn, amountIn);
+        priceObtained = finalSwapAmountUSD > 0;
       }
-    } else {
-      // Use provided USD value
-      priceObtained = true;
-    }
-
-    // Only process lottery if we got a valid price and swap meets minimum threshold
-    if (priceObtained && finalSwapAmountUSD >= MIN_SWAP_USD) {
-      // Process the instant lottery with actual USD amount
-      processInstantLottery(trader, finalSwapAmountUSD);
       
-      // Return a non-zero entry ID to indicate success
-      return totalLotteryEntries;
-    }
-
-    // If no valid price or below minimum, swap succeeds but no lottery entry is created
-    return 0;
-  }
-
-  /**
-   * @notice Process swap lottery and forward native fee for cross-chain VRF
-   * @dev Use this on chains without local VRF (e.g., Sonic). Caller must be authorized and send
-   *      sufficient native token to cover the VRF integrator fee. Any revert here preserves security
-   *      by never falling back to insecure randomness.
-   */
-  function processSwapLotteryPayable(
-    address trader,
-    address tokenIn,
-    uint256 amountIn,
-    uint256 swapValueUSD
-  ) external payable nonReentrant onlyAuthorizedSwapContract returns (uint256 entryId) {
-    require(trader != address(0), "Invalid trader address");
-    require(tokenIn != address(0), "Invalid token address");
-    require(amountIn > 0, "Invalid amount");
-
-    // Require a price oracle
-    if (address(priceOracle) == address(0)) {
-      return 0;
-    }
-
-    uint256 finalSwapAmountUSD = swapValueUSD;
-    bool priceObtained = false;
-
-    // If swapValueUSD is 0, calculate USD value using oracle
-    if (swapValueUSD == 0) {
-      try priceOracle.getAggregatedPrice() returns (int256 price, bool success, uint256 /* ts */) {
-        if (success && price > 0) {
-          finalSwapAmountUSD = (amountIn * uint256(price)) / 1e20;
-          priceObtained = true;
-        }
-      } catch {
+      // Fallback to primary oracle if no token oracle configured
+      if (!priceObtained && address(primaryOracle) != address(0)) {
+        try primaryOracle.getLatestPrice() returns (int256 price, uint256 /* timestamp */) {
+          if (price > 0) {
+            // Get token decimals
+            uint8 decimals = 18;
+            try IERC20Metadata(tokenIn).decimals() returns (uint8 d) {
+              decimals = d;
+            } catch {}
+            
+            // Convert to 6-decimal USD: (amountIn * price 1e18) / (10^decimals * 1e12) = 1e6
+            finalSwapAmountUSD = (amountIn * uint256(price)) / (10 ** decimals) / 1e12;
+            priceObtained = true;
+          }
+        } catch {}
+      }
+      
+      if (!priceObtained) {
+        emit SwapEntrySkipped("no_usd_value_and_no_oracle", 0, false, 0, address(this).balance);
         return 0;
       }
     } else {
       priceObtained = true;
     }
 
-    if (!(priceObtained && finalSwapAmountUSD >= MIN_SWAP_USD)) {
+    if (!(priceObtained && finalSwapAmountUSD >= instantLotteryConfig.minSwapAmount)) {
+      emit SwapEntrySkipped("below_min_swap_amount", finalSwapAmountUSD, priceObtained, 0, address(this).balance);
       return 0;
     }
 
     require(instantLotteryConfig.isActive, "Instant lottery not active");
-    require(address(vrfIntegrator) != address(0), "VRF integrator not set");
+    require(
+      address(localVRFConsumer) != address(0) || address(vrfIntegrator) != address(0),
+      "No VRF source configured"
+    );
 
-    // Compute win chance
+    // Step 3: Enhanced VRF request with better fee handling
     uint256 baseProbability = _calculateLinearWinChance(finalSwapAmountUSD);
     uint256 boostedProbability = _applyVeDRAGONBoost(trader, baseProbability, finalSwapAmountUSD);
-
-    // Get quoted fee and forward only the required amount; if msg.value is 0, try using contract balance (sponsored)
-    uint256 requestId;
-    {
-      MessagingFee memory feeQuote = vrfIntegrator.quote(30110, "");
-      uint256 required = feeQuote.nativeFee;
-      uint256 forwarded = 0;
-      if (msg.value >= required) {
-        forwarded = required;
-        try vrfIntegrator.requestRandomWordsSimple{value: forwarded}(30110) returns (MessagingReceipt memory /* r */, uint64 sequence) {
-          requestId = uint256(sequence);
-        } catch {
-          return 0; // best-effort
-        }
-      } else if (msg.value == 0 && address(this).balance >= required) {
-        // Sponsored path: temporarily transfer required native to integrator via low-level call
-        (bool ok,) = address(vrfIntegrator).call{value: required}("");
-        if (!ok) {
-          return 0; // best-effort
-        }
-        // Now request with zero msg.value (integrator holds balance)
-        try vrfIntegrator.requestRandomWordsSimple(30110) returns (MessagingReceipt memory /* r2 */, uint64 seq2) {
-          requestId = uint256(seq2);
-        } catch {
-          return 0; // best-effort
-        }
-      } else {
-        return 0; // best-effort
-      }
-    }
+    uint256 requestId = _requestVRFEnhanced(trader, finalSwapAmountUSD, boostedProbability);
+    
     if (requestId == 0) {
-      return 0; // best-effort
+      return 0;
     }
 
-    // Store pending entry
-    pendingEntries[requestId] = PendingLotteryEntry({
-      user: trader,
-      swapAmountUSD: finalSwapAmountUSD,
-      winProbability: boostedProbability,
-      timestamp: block.timestamp,
-      fulfilled: false,
-      randomnessSource: RandomnessSource.CROSS_CHAIN_VRF
-    });
-
-    emit LotteryEntryCreated(trader, finalSwapAmountUSD, boostedProbability, requestId);
-    emit RandomnessRequested(requestId, trader, RandomnessSource.CROSS_CHAIN_VRF);
-
-    // Update stats
+    // Step 4: Update stats
     userStats[trader].totalSwaps++;
     userStats[trader].totalVolume += finalSwapAmountUSD;
     userStats[trader].lastSwapTimestamp = block.timestamp;
     totalLotteryEntries++;
 
-    return totalLotteryEntries;
+    return requestId;
   }
 
   /**
-   * @notice Returns current VRF native fee for cross-chain request to Arbitrum (eid 30110)
+   * @notice Enhanced VRF request with improved fee handling and fallback logic
+   * @dev Better integration with ChainlinkVRFIntegratorV2_5
    */
-  function getVrfFee() external view returns (uint256) {
-    if (address(vrfIntegrator) == address(0)) return 0;
-    MessagingFee memory feeQuote = vrfIntegrator.quote(30110, "");
-    return feeQuote.nativeFee;
-  }
-
-  /**
-   * @notice Owner can fund this contract with native to sponsor VRF fees
-   */
-  function fundVrf() external payable onlyOwner {}
-
-  /**
-   * @notice Process instant lottery for a swap transaction
-   * @param user User who made the swap
-   * @param swapAmountUSD Swap amount in USD (6 decimals)
-   * @dev Called by authorized swap contracts only
-   */
-  function processInstantLottery(
-    address user,
-    uint256 swapAmountUSD
-  ) public onlyAuthorizedSwapContract rateLimited(user) {
-    require(user != address(0), "Invalid user address");
-    require(swapAmountUSD >= MIN_SWAP_USD, "Swap amount too low");
-    require(instantLotteryConfig.isActive, "Instant lottery not active");
-
-    // Update user stats
-    userStats[user].totalSwaps++;
-    userStats[user].totalVolume += swapAmountUSD;
-    userStats[user].lastSwapTimestamp = block.timestamp;
-    totalLotteryEntries++;
-
-    // Calculate win probability (no capping needed since we allow any trade size)
-    uint256 winChancePPM = _calculateLinearWinChance(swapAmountUSD);
-
-    // Apply veDRAGON boost
-    uint256 boostedWinChancePPM = _applyVeDRAGONBoost(user, winChancePPM, swapAmountUSD);
-
-    if (instantLotteryConfig.useVRFForInstant) {
-      // Request VRF randomness (best-effort). If unavailable, skip silently
-      uint256 randomnessId = _requestVRFForInstantLottery(user, swapAmountUSD, boostedWinChancePPM);
-      if (randomnessId == 0) {
-        return;
-      }
-      emit InstantLotteryEntered(user, swapAmountUSD, winChancePPM, boostedWinChancePPM, randomnessId);
-    } else {
-      // SECURITY: Non-VRF mode disabled for security - all randomness must be VRF-based
-      revert("Non-VRF mode disabled for security - configure VRF sources");
-    }
-  }
-
-  /**
-   * @dev Request VRF randomness for instant lottery with fallback sources
-   * @param user The user who made the swap
-   * @param swapAmountUSD The swap amount in USD
-   * @param winProbability The calculated win probability
-   * @return requestId The randomness request ID
-   */
-  function _requestVRFForInstantLottery(
+  function _requestVRFEnhanced(
     address user,
     uint256 swapAmountUSD,
     uint256 winProbability
@@ -596,33 +494,40 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
         requestId = localRequestId;
         source = RandomnessSource.LOCAL_VRF;
       } catch {
-        // Local VRF failed, try next option
+        // Local VRF failed, try cross-chain
       }
     }
 
-    // If local VRF failed, try cross-chain VRF
+    // Try cross-chain VRF with enhanced fee handling
     if (requestId == 0 && address(vrfIntegrator) != address(0)) {
-      // Request cross-chain VRF without payment (VRF fees should be handled separately)
-      try vrfIntegrator.requestRandomWordsSimple(30110) returns (
+      try vrfIntegrator.quoteFee() returns (MessagingFee memory fee) {
+        // Check if contract has enough balance (includes msg.value)
+        uint256 availableFee = address(this).balance;
+        
+        if (availableFee >= fee.nativeFee) {
+          try vrfIntegrator.requestRandomWordsPayable{value: fee.nativeFee}(targetEid) returns (
         MessagingReceipt memory /* receipt */,
         uint64 sequence
       ) {
         requestId = uint256(sequence);
         source = RandomnessSource.CROSS_CHAIN_VRF;
       } catch {
-        // Cross-chain VRF also failed
+            // VRF request failed
+          }
+        } else {
+          emit VRFRequestFailed(fee.nativeFee, availableFee);
+        }
+      } catch {
+        // Fee quote failed
       }
     }
 
-    // Removed randomnessProvider fallback - using only Chainlink VRF sources
-
     if (requestId == 0) {
-      // All VRF sources failed - best-effort: do not revert; caller may skip lottery
       return 0;
     }
 
-    // Store pending lottery entry
-    pendingEntries[requestId] = PendingLotteryEntry({
+    // Store pending lottery entry with composite key
+    pendingEntries[_getEntryKey(source, requestId)] = PendingLotteryEntry({
       user: user,
       swapAmountUSD: swapAmountUSD,
       winProbability: winProbability,
@@ -638,9 +543,44 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   }
 
   /**
+   * @notice Enhanced instant lottery processing with automatic price updates
+   * @param user User who made the swap
+   * @param swapAmountUSD Swap amount in USD (6 decimals)
+   */
+  function processInstantLottery(
+    address user,
+    uint256 swapAmountUSD
+  ) public onlyAuthorizedSwapContract whenNotPaused {
+    require(user != address(0), "Invalid user address");
+    require(swapAmountUSD >= instantLotteryConfig.minSwapAmount, "Swap amount too low");
+    require(instantLotteryConfig.isActive, "Instant lottery not active");
+
+    // Calculate win probability
+    uint256 winChancePPM = _calculateLinearWinChance(swapAmountUSD);
+    uint256 boostedWinChancePPM = _applyVeDRAGONBoost(user, winChancePPM, swapAmountUSD);
+
+    if (instantLotteryConfig.useVRFForInstant) {
+      uint256 randomnessId = _requestVRFEnhanced(user, swapAmountUSD, boostedWinChancePPM);
+      if (randomnessId == 0) {
+        return;
+      }
+      
+      // Only update stats after successful VRF request
+      userStats[user].totalSwaps++;
+      userStats[user].totalVolume += swapAmountUSD;
+      userStats[user].lastSwapTimestamp = block.timestamp;
+      totalLotteryEntries++;
+      
+      emit InstantLotteryEntered(user, swapAmountUSD, winChancePPM, boostedWinChancePPM, randomnessId);
+    } else {
+      revert("Non-VRF mode disabled for security - configure VRF sources");
+    }
+  }
+
+  // ============ VRF CALLBACK FUNCTIONS ============
+
+  /**
    * @notice Callback function for local VRF requests
-   * @dev Called by the local VRF consumer when randomness is ready
-   * Added reentrancy protection for distribution safety
    */
   function receiveRandomWords(uint256 requestId, uint256[] memory randomWords) external nonReentrant {
     require(msg.sender == address(localVRFConsumer), "Only local VRF consumer");
@@ -651,8 +591,6 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
 
   /**
    * @notice Callback function for cross-chain VRF requests
-   * @dev Called by the VRF integrator when cross-chain randomness is ready
-   * Added reentrancy protection for distribution safety
    */
   function receiveRandomWords(uint256[] memory randomWords, uint256 sequence) external nonReentrant {
     require(msg.sender == address(vrfIntegrator), "Only VRF integrator");
@@ -663,34 +601,25 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
 
   /**
    * @dev Process VRF callback and determine lottery outcome
-   * @param requestId The VRF request ID
-   * @param randomness The random number from VRF
-   * @param source The randomness source that provided the callback
    */
   function _processVRFCallback(uint256 requestId, uint256 randomness, RandomnessSource source) internal {
-    PendingLotteryEntry storage entry = pendingEntries[requestId];
+    bytes32 entryKey = _getEntryKey(source, requestId);
+    PendingLotteryEntry storage entry = pendingEntries[entryKey];
     require(entry.user != address(0), "Invalid request ID");
     require(!entry.fulfilled, "Entry already fulfilled");
     require(entry.randomnessSource == source, "Wrong randomness source");
 
-    // Mark as fulfilled
     entry.fulfilled = true;
 
-    // Process the lottery result
     _processLotteryResult(entry.user, entry.swapAmountUSD, entry.winProbability, randomness);
 
     emit RandomnessFulfilled(requestId, randomness, source);
 
-    // Clean up storage to save gas
-    delete pendingEntries[requestId];
+    delete pendingEntries[entryKey];
   }
 
   /**
    * @dev Process lottery result and distribute rewards if won
-   * @param user The user who entered the lottery
-   * @param swapAmountUSD The swap amount in USD
-   * @param winProbability The win probability in basis points
-   * @param randomness The random number to determine outcome
    */
   function _processLotteryResult(
     address user,
@@ -698,18 +627,15 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     uint256 winProbability,
     uint256 randomness
   ) internal {
-    // Determine if user won (randomness % 1000000 < winProbability) - using PPM
-    bool won = (randomness % 1000000) < winProbability;
+    bool won = _isWin(winProbability, randomness);
 
     uint256 reward = 0;
     if (won) {
-      // Calculate reward from jackpot
       reward = _calculateInstantLotteryReward(swapAmountUSD);
 
       if (reward > 0) {
         _distributeInstantLotteryReward(user, reward);
 
-        // Update statistics
         userStats[user].totalWins++;
         userStats[user].totalRewards += reward;
         totalPrizesWon++;
@@ -720,10 +646,8 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     emit InstantLotteryProcessed(user, swapAmountUSD, won, reward);
   }
 
-  /**
-   * @dev Calculate instant lottery reward based on jackpot and configuration
-   * @return reward The calculated reward amount
-   */
+  // ============ HELPER FUNCTIONS ============
+
   function _calculateInstantLotteryReward(uint256 /* swapAmountUSD */) internal view returns (uint256 reward) {
     if (address(jackpotVault) == address(0)) {
       return 0;
@@ -735,47 +659,39 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     } catch {
       return 0;
     }
+
     if (currentJackpot == 0) {
       return 0;
     }
 
+    // Calculate partial reward based on configured percentage
+    // Note: This is in "jackpot units" - a mix of token amounts
+    // The vault will proportionally distribute from each token type
     reward = (currentJackpot * instantLotteryConfig.rewardPercentage) / 10000;
     return reward;
   }
 
-  /**
-   * @dev Distribute instant lottery reward to winner
-   * @param winner The winner address
-   * @param reward The reward amount
-   * @dev Pure coordinator - delegates all fund handling to other contracts
-   */
   function _distributeInstantLotteryReward(address winner, uint256 reward) internal {
     if (address(jackpotVault) == address(0) || reward == 0) {
       return;
     }
+    
     try jackpotVault.payJackpot(winner, reward) {
-      emit InstantLotteryProcessed(winner, 0, true, reward);
+      // Success - event will be emitted by _processLotteryResult
     } catch {
       emit PrizeTransferFailed(winner, reward);
     }
   }
 
-  /**
-   * @dev Calculate linear win chance based on swap amount
-   * @param swapAmountUSD Swap amount in USD (6 decimals)
-   * @return winChancePPM Win chance in parts per million (capped at MAX_WIN_CHANCE_PPM for swaps >= $10,000)
-   */
   function _calculateLinearWinChance(uint256 swapAmountUSD) internal pure returns (uint256 winChancePPM) {
     if (swapAmountUSD < MIN_SWAP_USD) {
       return 0;
     }
 
-    // Cap probability at $10,000 level, but allow any trade size
     if (swapAmountUSD >= MAX_PROBABILITY_SWAP_USD) {
       return MAX_WIN_CHANCE_PPM;
     }
 
-    // Linear interpolation between MIN_WIN_CHANCE_PPM and MAX_WIN_CHANCE_PPM
     uint256 amountRange = MAX_PROBABILITY_SWAP_USD - MIN_SWAP_USD;
     uint256 chanceRange = MAX_WIN_CHANCE_PPM - MIN_WIN_CHANCE_PPM;
     uint256 amountDelta = swapAmountUSD - MIN_SWAP_USD;
@@ -786,117 +702,199 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
   }
 
   /**
-   * @dev Apply veDRAGON boost to base win probability using boost manager
+   * @notice Apply veDRAGON boost to lottery probability PROPORTIONALLY based on locked amount
    * @param user User address to calculate boost for
    * @param baseProbability Base win probability in PPM
-   * @return boostedProbability Boosted probability (capped at MAX_WIN_PROBABILITY_PPM)
+   * @param swapAmountUSD USD value of the swap
+   * @return boostedProbability Proportionally boosted probability (capped at MAX_WIN_PROBABILITY_PPM)
    */
   function _applyVeDRAGONBoost(
     address user,
     uint256 baseProbability,
-    uint256 /* swapAmount */
+    uint256 swapAmountUSD
   ) internal view returns (uint256) {
-    // If boost manager not configured, fallback to simple calculation
-    if (address(veDRAGONBoostManager) == address(0)) {
-      return _applyVeDRAGONBoostFallback(user, baseProbability);
+    // Use veDRAGONBoostManager as the single source of truth for all boost calculations
+    if (address(veDRAGONBoostManager) != address(0)) {
+      try veDRAGONBoostManager.calculateBoost(user) returns (uint256 boostMultiplierBPS) {
+        // Cap boost from external source to prevent misconfiguration
+        if (boostMultiplierBPS > MAX_BOOST_BPS) {
+          boostMultiplierBPS = MAX_BOOST_BPS;
+        }
+        
+        // Get user's locked USD value
+        uint256 lockedUSDValue = _getUserLockedUSDValue(user);
+        
+        if (lockedUSDValue == 0) {
+          return baseProbability; // No boost if no locked value
+        }
+        
+        // Calculate proportional boost
+        uint256 boostedPortion = swapAmountUSD > lockedUSDValue ? lockedUSDValue : swapAmountUSD;
+        uint256 unboostedPortion = swapAmountUSD - boostedPortion;
+        
+        // Calculate boost multiplier (10000 = 100%, 25000 = 250%)
+        uint256 boostMultiplier = (boostMultiplierBPS * BOOST_PRECISION) / 10000;
+        
+        // Apply boost proportionally
+        uint256 boostedProbPortion = (baseProbability * boostedPortion * boostMultiplier) / (swapAmountUSD * BOOST_PRECISION);
+        uint256 unboostedProbPortion = (baseProbability * unboostedPortion) / swapAmountUSD;
+        
+        uint256 totalBoostedProbability = boostedProbPortion + unboostedProbPortion;
+        
+        // Cap at maximum win probability
+        return totalBoostedProbability > MAX_WIN_PROBABILITY_PPM ? MAX_WIN_PROBABILITY_PPM : totalBoostedProbability;
+      } catch {
+        // If boost manager fails, return base probability without boost
+        return baseProbability;
+      }
     }
 
-    // Use the sophisticated boost manager calculation
-    uint256 boostMultiplierBPS = veDRAGONBoostManager.calculateBoost(user); // Returns in basis points (10000 = 100%)
+    // If boost manager not set, return base probability without boost
+    return baseProbability;
+  }
+
+
+
+  /**
+   * @notice Get user's locked USD value via redDRAGON → LP tokens → USD calculation
+   * @param user User address
+   * @return USD value of locked tokens (scaled by 1e6)
+   */
+  function _getUserLockedUSDValue(address user) internal view returns (uint256) {
+    if (address(redDRAGONToken) == address(0)) {
+      return 0;
+    }
     
-    // Convert from basis points to our internal precision
-    uint256 boostMultiplier = (boostMultiplierBPS * BOOST_PRECISION) / 10000;
-
-    // Apply boost
-    uint256 boostedProbability = (baseProbability * boostMultiplier) / BOOST_PRECISION;
-
-    // Ensure we don't exceed the maximum win probability
-    return boostedProbability > MAX_WIN_PROBABILITY_PPM ? MAX_WIN_PROBABILITY_PPM : boostedProbability;
+    // Step 1: Get user's locked redDRAGON amount from veDRAGON
+    uint256 lockedRedDragonAmount = _getLockedRedDragonAmount(user);
+    if (lockedRedDragonAmount == 0) {
+      return 0;
+    }
+    
+    // Step 2: Convert redDRAGON shares to underlying DRAGON/wS LP tokens (ERC-4626)
+    try IredDRAGON(address(redDRAGONToken)).convertToAssets(lockedRedDragonAmount) returns (uint256 underlyingLP) {
+      if (underlyingLP == 0) return 0;
+      
+      // Step 3: Calculate USD value of DRAGON/wS LP tokens
+      return _calculateLPTokenUSDValue(underlyingLP);
+    } catch {
+      return 0;
+    }
+  }
+  
+  /**
+   * @notice Get user's locked redDRAGON amount from veDRAGON contract
+   * @param user User address
+   * @return Amount of redDRAGON tokens locked
+   */
+  function _getLockedRedDragonAmount(address user) internal view returns (uint256) {
+    if (address(veDRAGONToken) == address(0)) {
+      return 0;
+    }
+    
+    try IveDRAGONToken(address(veDRAGONToken)).locked(user) returns (uint256 amount, uint256 unlockTime) {
+      // Only return amount if lock hasn't expired
+      if (unlockTime > block.timestamp) {
+        return amount;
+      }
+      return 0;
+    } catch {
+      return 0;
+    }
+  }
+  
+  /**
+   * @notice Convert token amount to USD value (1e6 scale)
+   * @param token Token address
+   * @param amount Token amount in native decimals
+   * @return USD value scaled by 1e6
+   */
+  function _amountToUsd1e6(address token, uint256 amount) internal view returns (uint256) {
+    if (amount == 0) return 0;
+    
+    address oracle = tokenUsdOracle[token];
+    if (oracle == address(0)) return 0;
+    
+    try IPriceOracleLike(oracle).getLatestPrice() returns (int256 price1e18, uint256) {
+      if (price1e18 <= 0) return 0;
+      
+      uint8 decimals;
+      try IERC20Metadata(token).decimals() returns (uint8 d) {
+        decimals = d;
+      } catch {
+        decimals = 18; // Default to 18 if decimals() fails
+      }
+      
+      // USD(1e6) = amount * price(1e18) / (10^decimals * 1e12)
+      return (amount * uint256(price1e18)) / (10 ** decimals) / 1e12;
+    } catch {
+      return 0;
+    }
   }
 
   /**
-   * @dev Fallback veDRAGON boost calculation when boost manager is not available
-   * @param user User address to calculate boost for
-   * @param baseProbability Base win probability in PPM
-   * @return boostedProbability Boosted probability
+   * @notice Calculate USD value of DRAGON/wS LP tokens
+   * @param lpAmount Amount of LP tokens
+   * @return USD value (scaled by 1e6)
    */
-  function _applyVeDRAGONBoostFallback(
-    address user,
-    uint256 baseProbability
-  ) internal view returns (uint256) {
-    // If tokens not configured, return base probability
-    if (address(veDRAGONToken) == address(0) || address(redDRAGONToken) == address(0)) {
-      return baseProbability;
+  function _calculateLPTokenUSDValue(uint256 lpAmount) internal view returns (uint256) {
+    if (lpAmount == 0 || address(redDRAGONToken) == address(0)) {
+      return 0;
     }
-
-    // Get user's balances
-    uint256 userRedDRAGON = redDRAGONToken.balanceOf(user);
-    uint256 userVeDRAGON = veDRAGONToken.balanceOf(user);
-
-    // If user has no tokens, return base probability
-    if (userRedDRAGON == 0 && userVeDRAGON == 0) {
-      return baseProbability;
+    
+    try IredDRAGON(address(redDRAGONToken)).asset() returns (address lpToken) {
+      if (lpToken == address(0)) return 0;
+      
+      IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+      
+      // Get reserves and total supply
+      (uint112 reserve0, uint112 reserve1,) = pair.getReserves();
+      uint256 totalSupply = pair.totalSupply();
+      
+      if (totalSupply == 0) return 0;
+      
+      // Calculate user's share of reserves
+      uint256 userAmount0 = (uint256(reserve0) * lpAmount) / totalSupply;
+      uint256 userAmount1 = (uint256(reserve1) * lpAmount) / totalSupply;
+      
+      // Get token addresses
+      address token0 = pair.token0();
+      address token1 = pair.token1();
+      
+      // Calculate USD value for each side using configured oracles
+      uint256 usd0 = _amountToUsd1e6(token0, userAmount0);
+      uint256 usd1 = _amountToUsd1e6(token1, userAmount1);
+      
+      return usd0 + usd1;
+      
+    } catch {
+      // If redDRAGON asset lookup fails, return 0
+      return 0;
     }
-
-    // Get total supplies
-    uint256 totalRedDRAGON = redDRAGONToken.totalSupply();
-    uint256 totalVeDRAGON = veDRAGONToken.totalSupply();
-
-    if (totalRedDRAGON == 0) {
-      return baseProbability;
-    }
-
-    // Simple boost calculation: 1.0x to 2.5x based on token holdings
-    uint256 userTotalTokens = userRedDRAGON + userVeDRAGON;
-    uint256 totalTokens = totalRedDRAGON + totalVeDRAGON;
-
-    if (totalTokens == 0) {
-      return baseProbability;
-    }
-
-    // Calculate boost multiplier (1.0x to 2.5x)
-    uint256 boostMultiplier = BOOST_PRECISION + (15e17 * userTotalTokens) / totalTokens; // 1.0 + 1.5 * ratio
-
-    // Cap at maximum boost
-    if (boostMultiplier > MAX_BOOST) {
-      boostMultiplier = MAX_BOOST;
-    }
-
-    // Apply boost
-    uint256 boostedProbability = (baseProbability * boostMultiplier) / BOOST_PRECISION;
-
-    // Ensure we don't exceed the maximum win probability
-    return boostedProbability > MAX_WIN_PROBABILITY_PPM ? MAX_WIN_PROBABILITY_PPM : boostedProbability;
   }
 
   // ============ VIEW FUNCTIONS ============
 
-  /**
-   * @notice Get instant lottery configuration
-   */
   function getInstantLotteryConfig()
     external
     view
     returns (
-      uint256 baseWinProbability,
       uint256 minSwapAmount,
       uint256 rewardPercentage,
       bool isActive,
-      bool useVRFForInstant
+      bool useVRFForInstant,
+      bool enablePriceUpdates
     )
   {
     return (
-      instantLotteryConfig.baseWinProbability,
       instantLotteryConfig.minSwapAmount,
       instantLotteryConfig.rewardPercentage,
       instantLotteryConfig.isActive,
-      instantLotteryConfig.useVRFForInstant
+      instantLotteryConfig.useVRFForInstant,
+      instantLotteryConfig.enablePriceUpdates
     );
   }
 
-  /**
-   * @notice Get user statistics
-   */
   function getUserStats(
     address user
   )
@@ -914,54 +912,61 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     return (stats.totalSwaps, stats.totalVolume, stats.totalWins, stats.totalRewards, stats.lastSwapTimestamp);
   }
 
-  /**
-   * @notice Get pending lottery entry details
-   */
-  function getPendingEntry(
-    uint256 requestId
-  )
-    external
-    view
-    returns (
-      address user,
-      uint256 swapAmountUSD,
-      uint256 winProbability,
-      uint256 timestamp,
-      bool fulfilled,
-      RandomnessSource randomnessSource
-    )
-  {
-    PendingLotteryEntry memory entry = pendingEntries[requestId];
-    return (
-      entry.user,
-      entry.swapAmountUSD,
-      entry.winProbability,
-      entry.timestamp,
-      entry.fulfilled,
-      entry.randomnessSource
-    );
-  }
-
-  /**
-   * @notice Calculate win probability for a given swap amount and user
-   */
   function calculateWinProbability(
     address user,
     uint256 swapAmountUSD
   ) external view returns (uint256 baseProbability, uint256 boostedProbability) {
-    // No capping needed since we allow any trade size but cap probability at $10k level
     baseProbability = _calculateLinearWinChance(swapAmountUSD);
     boostedProbability = _applyVeDRAGONBoost(user, baseProbability, swapAmountUSD);
 
-    // Cap at maximum (already handled in _applyVeDRAGONBoost)
     if (boostedProbability > MAX_WIN_PROBABILITY_PPM) {
       boostedProbability = MAX_WIN_PROBABILITY_PPM;
     }
   }
 
   /**
-   * @notice Get current jackpot amount
+   * @notice Test proportional boost calculation with example values
+   * @param user User address to test
+   * @param swapAmountUSD Swap amount in USD
+   * @return lockedUSD User's locked USD value
+   * @return boostedPortion Amount that gets boosted
+   * @return unboostedPortion Amount that doesn't get boosted
+   * @return boostMultiplier The boost multiplier applied
+   * @return finalProbability The final proportional probability
    */
+  function testProportionalBoost(
+    address user,
+    uint256 swapAmountUSD
+  ) external view returns (
+    uint256 lockedUSD,
+    uint256 boostedPortion,
+    uint256 unboostedPortion,
+    uint256 boostMultiplier,
+    uint256 finalProbability
+  ) {
+    uint256 baseProbability = _calculateLinearWinChance(swapAmountUSD);
+    lockedUSD = _getUserLockedUSDValue(user);
+    
+    if (lockedUSD == 0) {
+      return (0, 0, swapAmountUSD, 10000, baseProbability);
+    }
+    
+    boostedPortion = swapAmountUSD > lockedUSD ? lockedUSD : swapAmountUSD;
+    unboostedPortion = swapAmountUSD - boostedPortion;
+    
+    if (address(veDRAGONBoostManager) != address(0)) {
+      try veDRAGONBoostManager.calculateBoost(user) returns (uint256 boostBPS) {
+        boostMultiplier = boostBPS;
+      } catch {
+        boostMultiplier = 10000; // 1x if failed
+      }
+    } else {
+      boostMultiplier = 10000; // 1x if not set
+    }
+    
+    finalProbability = _applyVeDRAGONBoost(user, baseProbability, swapAmountUSD);
+  }
+
   function getCurrentJackpot() external view returns (uint256) {
     if (address(jackpotVault) == address(0)) {
       return 0;
@@ -973,163 +978,276 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, IVRFCallbackRecei
     }
   }
 
-  // ============ DEPRECATED PRIZE CLAIM FUNCTIONS ============
-  // These functions are kept for interface compatibility but are no longer used
-  // All prizes are distributed immediately through jackpot distributor/vault
+  function getVrfFee() external view returns (uint256) {
+    if (address(vrfIntegrator) == address(0)) return 0;
+    MessagingFee memory feeQuote = vrfIntegrator.quoteFee();
+    return feeQuote.nativeFee;
+  }
+
+  function fundVrf() external payable onlyOwner {}
 
   /**
-   * @notice Get unclaimed prizes for a user
-   * @dev Always returns 0 - included for interface compatibility
-   * @return amount Always returns 0
+   * @dev Accept native S deposits for VRF funding and contract operations
    */
-  function getUnclaimedPrizes(address /* user */) external pure returns (uint256 amount) {
-    return 0;
+  receive() external payable {
+    emit VRFFunded(msg.sender, msg.value);
   }
 
   /**
-   * @notice DEPRECATED - No-op as lottery manager no longer holds funds
-   * @dev Reverts to indicate this function is no longer used
+   * @dev Fallback function to accept native S
    */
-  function claimPrize() external pure {
-    revert("Function deprecated - lottery manager does not hold funds");
+  fallback() external payable {
+    emit VRFFunded(msg.sender, msg.value);
   }
 
-  /**
-   * @notice DEPRECATED - Returns 0 as lottery manager no longer holds funds
-   * @return total Always returns 0
-   */
-  function getTotalUnclaimedPrizes() external pure returns (uint256 total) {
-    return 0;
-  }
-
-  // ============ ORACLE INTEGRATION ============
+  // ============ ECOSYSTEM INTEGRATION HELPERS ============
 
   /**
-   * @notice Set the DRAGON token address for price conversions
-   * @param _dragonToken Address of the DRAGON token
+   * @notice Check if this lottery manager is properly configured for the ecosystem
+   * @return isConfigured Whether all required components are set
+   * @return missingComponents Array of missing component names
    */
-  function setDragonToken(address _dragonToken) external onlyOwner {
-    require(_dragonToken != address(0), "Invalid dragon token");
-    dragonToken = IERC20(_dragonToken);
-  }
+  function checkEcosystemIntegration() 
+    external 
+    view 
+    returns (bool isConfigured, string[] memory missingComponents) 
+  {
+    string[] memory missing = new string[](10);
+    uint256 missingCount = 0;
 
-  /**
-   * @notice Get current DRAGON price from oracle
-   * @return price Price in USD (18 decimals)
-   * @return isValid Whether the price is valid
-   */
-  function _getDragonPriceUSD() internal view returns (int256 price, bool isValid) {
-    if (address(priceOracle) == address(0)) return (0, false);
-    
-    try priceOracle.getAggregatedPrice() returns (
-      int256 _price, 
-      bool _success, 
-      uint256 /* timestamp */
-    ) {
-      return (_price, _success);
-    } catch {
-      return (0, false);
-    }
-  }
-
-  /**
-   * @notice Convert DRAGON amount to USD (6 decimals)
-   * @param dragonAmount Amount of DRAGON tokens (18 decimals)
-   * @return usdAmount USD amount (6 decimals)
-   */
-  function _convertDragonToUSD(uint256 dragonAmount) internal view returns (uint256 usdAmount) {
-    if (dragonAmount == 0) return 0;
-    
-    (int256 price, bool isValid) = _getDragonPriceUSD();
-    if (!isValid || price <= 0) return 0;
-    
-    // Convert: DRAGON (18 decimals) * Price (18 decimals) / 1e30 = USD (6 decimals)
-    return (dragonAmount * uint256(price)) / 1e30;
-  }
-
-  /**
-   * @notice Process lottery entry with DRAGON amount (called by omniDRAGON token)
-   * @param user User address
-   * @param dragonAmount Amount of DRAGON tokens involved in swap
-   */
-  function processEntryWithDragon(address user, uint256 dragonAmount) external nonReentrant rateLimited(user) {
-    require(msg.sender == address(dragonToken), "Only DRAGON token");
-    require(user != address(0), "Invalid user");
-    require(instantLotteryConfig.isActive, "Instant lottery not active");
-    
-    // Convert DRAGON amount to USD
-    uint256 usdAmount = _convertDragonToUSD(dragonAmount);
-    
-    // Check minimum USD threshold
-    if (usdAmount < MIN_SWAP_USD) {
-      return; // Below minimum threshold, no lottery entry
-    }
-    
-    // Calculate win probability based on USD amount
-    (, uint256 winProbability) = this.calculateWinProbability(user, usdAmount);
-    
-    // Process the lottery entry with USD amount using secure VRF
-    if (instantLotteryConfig.useVRFForInstant) {
-      // Request VRF randomness (best-effort). If unavailable, skip silently
-      uint256 randomnessId = _requestVRFForInstantLottery(user, usdAmount, winProbability);
-      if (randomnessId == 0) {
-        return;
+    // Check appropriate oracle based on chain
+    if (CHAIN_ID == SONIC_CHAIN_ID) {
+      if (address(primaryOracle) == address(0)) {
+        missing[missingCount] = "primaryOracle";
+        missingCount++;
       }
-      emit InstantLotteryEntered(user, usdAmount, winProbability, winProbability, randomnessId);
     } else {
-      // SECURITY: Non-VRF mode disabled for security - all randomness must be VRF-based
-      revert("Non-VRF mode disabled for security - configure VRF sources");
+      if (priceOracle == address(0)) {
+        missing[missingCount] = "priceOracle";
+        missingCount++;
+      }
     }
+    if (address(vrfIntegrator) == address(0)) {
+      missing[missingCount] = "vrfIntegrator";
+      missingCount++;
+    }
+    if (address(jackpotVault) == address(0)) {
+      missing[missingCount] = "jackpotVault";
+      missingCount++;
+    }
+    if (address(veDRAGONToken) == address(0)) {
+      missing[missingCount] = "veDRAGONToken";
+      missingCount++;
+    }
+    if (address(veDRAGONBoostManager) == address(0)) {
+      missing[missingCount] = "veDRAGONBoostManager";
+      missingCount++;
+    }
+
+    // Create properly sized array
+    string[] memory result = new string[](missingCount);
+    for (uint256 i = 0; i < missingCount; i++) {
+      result[i] = missing[i];
+    }
+
+    return (missingCount == 0, result);
+  }
+
+  /**
+   * @notice Test the boost calculation for a user to verify veDRAGON integration
+   * @param user User address to test
+   * @param testAmount Test swap amount in USD (6 decimals)
+   * @return baseProbability Calculated base probability
+   * @return boostedProbability Boosted probability after veDRAGON boost
+   * @return boostMultiplier Effective boost multiplier applied
+   */
+  function testBoostCalculation(
+    address user,
+    uint256 testAmount
+  ) external view returns (
+    uint256 baseProbability,
+    uint256 boostedProbability,
+    uint256 boostMultiplier
+  ) {
+    baseProbability = _calculateLinearWinChance(testAmount);
+    boostedProbability = _applyVeDRAGONBoost(user, baseProbability, testAmount);
     
-    // Update user statistics
-    userStats[user].totalSwaps++;
-    userStats[user].totalVolume += usdAmount;
-    userStats[user].lastSwapTimestamp = block.timestamp;
-    
-    totalLotteryEntries++;
+    if (baseProbability > 0) {
+      boostMultiplier = (boostedProbability * BOOST_PRECISION) / baseProbability;
+    } else {
+      boostMultiplier = BOOST_PRECISION;
+    }
   }
 
   /**
-   * @notice Get current DRAGON price in USD for external queries
-   * @return price Price in USD (18 decimals)
-   * @return isValid Whether the price is valid
-   * @return timestamp Last update timestamp
+   * @notice Get user's veDRAGON information for debugging
+   * @param user User address
+   * @return veDRAGONBalance User's veDRAGON balance
+   * @return redDRAGONBalance User's redDRAGON balance  
+   * @return votingPower User's voting power (if available)
+   * @return boostManagerBoost Boost from boost manager (if available)
    */
-  function getDragonPriceUSD() external view returns (int256 price, bool isValid, uint256 timestamp) {
-    if (address(priceOracle) == address(0)) return (0, false, 0);
-    return priceOracle.getAggregatedPrice();
+  function getUserVeDRAGONInfo(address user) 
+    external 
+    view 
+    returns (
+      uint256 veDRAGONBalance,
+      uint256 redDRAGONBalance,
+      uint256 votingPower,
+      uint256 boostManagerBoost
+    ) 
+  {
+    // Get veDRAGON balance
+    if (address(veDRAGONToken) != address(0)) {
+      try veDRAGONToken.balanceOf(user) returns (uint256 balance) {
+        veDRAGONBalance = balance;
+      } catch {
+        veDRAGONBalance = 0;
+      }
+
+      try IveDRAGON(address(veDRAGONToken)).getVotingPower(user) returns (uint256 vp) {
+        votingPower = vp;
+      } catch {
+        votingPower = 0;
+      }
+    }
+
+    // Get redDRAGON balance
+    if (address(redDRAGONToken) != address(0)) {
+      try redDRAGONToken.balanceOf(user) returns (uint256 balance) {
+        redDRAGONBalance = balance;
+      } catch {
+        redDRAGONBalance = 0;
+      }
+    }
+
+    // Get boost manager boost
+    if (address(veDRAGONBoostManager) != address(0)) {
+      try veDRAGONBoostManager.calculateBoost(user) returns (uint256 boost) {
+        boostManagerBoost = boost;
+      } catch {
+        boostManagerBoost = 0;
+      }
+    }
+  }
+
+  // ============ HELPER FUNCTIONS (CONTINUED) ============
+
+  /**
+   * @notice Generate composite key for pending entries
+   * @param source Randomness source type
+   * @param id Request ID
+   * @return Composite key
+   */
+  function _getEntryKey(RandomnessSource source, uint256 id) private pure returns (bytes32) {
+    return keccak256(abi.encodePacked(uint8(source), id));
   }
 
   /**
-   * @notice Convert DRAGON amount to USD for external queries
-   * @param dragonAmount Amount of DRAGON tokens (18 decimals)
-   * @return usdAmount USD amount (6 decimals)
+   * @notice Bias-free random win check
+   * @param ppm Win probability in parts per million (0-1,000,000)
+   * @param rnd Random number from VRF
+   * @return Whether the user won
    */
-  function convertDragonToUSD(uint256 dragonAmount) external view returns (uint256 usdAmount) {
-    return _convertDragonToUSD(dragonAmount);
+  function _isWin(uint256 ppm, uint256 rnd) internal pure returns (bool) {
+    if (ppm == 0) return false;
+    if (ppm >= 1_000_000) return true;
+    unchecked {
+      // threshold = floor(max / 1_000_000) * ppm
+      uint256 bucket = type(uint256).max / 1_000_000;
+      uint256 threshold = bucket * ppm;
+      return rnd < threshold;
+    }
   }
 
-  /**
-   * @notice REMOVED: Insecure instant lottery processing function
-   * @dev This function was removed due to security vulnerabilities in its randomness generation.
-   * All lottery processing now uses cryptographically secure VRF-based randomness via
-   * processInstantLottery() and _requestVRFForInstantLottery().
-   * 
-   * SECURITY NOTE: The previous implementation used exploitable pseudo-randomness
-   * (block.timestamp, block.prevrandao) which could be manipulated by miners/validators.
-   * This violated the contract's security guarantees and has been eliminated.
-   */
+  // ============ SONIC FEEM INTEGRATION ============
 
-  // ========== SONIC FEEM INTEGRATION ==========
-
-  /**
-   * @dev Register my contract on Sonic FeeM
-   * @notice This registers the contract with Sonic's Fee Manager for network benefits
-   */
   function registerMe() external onlyOwner {
     (bool _success,) = address(0xDC2B0D2Dd2b7759D97D50db4eabDC36973110830).call(
         abi.encodeWithSignature("selfRegister(uint256)", 143)
     );
     require(_success, "FeeM registration failed");
+  }
+
+  // ============ ADMIN FUNCTIONS (SAFETY) ============
+
+  /**
+   * @notice Pause lottery operations
+   */
+  function pause() external onlyOwner {
+    _pause();
+  }
+
+  /**
+   * @notice Unpause lottery operations
+   */
+  function unpause() external onlyOwner {
+    _unpause();
+  }
+
+  /**
+   * @notice Set target EID for cross-chain VRF
+   * @param _targetEid LayerZero endpoint ID
+   */
+  function setTargetEid(uint32 _targetEid) external onlyOwner {
+    require(_targetEid > 0, "Invalid EID");
+    targetEid = _targetEid;
+  }
+
+  /**
+   * @notice Withdraw native tokens (for emergencies)
+   * @param to Recipient address
+   * @param amount Amount to withdraw
+   */
+  function withdrawNative(address payable to, uint256 amount) external onlyOwner {
+    require(to != address(0), "Invalid recipient");
+    require(amount <= address(this).balance, "Insufficient balance");
+    
+    (bool success,) = to.call{value: amount}("");
+    require(success, "Transfer failed");
+  }
+
+  /**
+   * @notice Recover stuck tokens
+   * @param token Token to recover
+   * @param to Recipient address
+   * @param amount Amount to recover
+   */
+  function recoverToken(IERC20 token, address to, uint256 amount) external onlyOwner {
+    require(to != address(0), "Invalid recipient");
+    token.safeTransfer(to, amount);
+  }
+
+  /**
+   * @notice Set token USD oracle
+   * @param token Token address
+   * @param oracle Oracle address that provides TOKEN/USD price (1e18 scale)
+   */
+  function setTokenUsdOracle(address token, address oracle) external onlyOwner {
+    require(token != address(0), "Invalid token");
+    require(oracle != address(0), "Invalid oracle");
+    
+    tokenUsdOracle[token] = oracle;
+    emit TokenUsdOracleSet(token, oracle);
+  }
+
+  /**
+   * @notice Unset token USD oracle
+   * @param token Token address
+   */
+  function unsetTokenUsdOracle(address token) external onlyOwner {
+    require(token != address(0), "Invalid token");
+    
+    tokenUsdOracle[token] = address(0);
+    emit TokenUsdOracleSet(token, address(0));
+  }
+
+  /**
+   * @notice Set max gas for oracle price updates
+   * @param _maxGas Maximum gas limit
+   */
+  function setMaxPriceUpdateGas(uint256 _maxGas) external onlyOwner {
+    require(_maxGas >= 100_000 && _maxGas <= 2_000_000, "Gas limit out of range");
+    maxPriceUpdateGas = _maxGas;
   }
 }

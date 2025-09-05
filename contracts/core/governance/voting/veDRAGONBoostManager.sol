@@ -6,7 +6,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IveDRAGON} from "../../../interfaces/tokens/IveDRAGON.sol";
 import {IDragonJackpotVault} from "../../../interfaces/lottery/IDragonJackpotVault.sol";
 import {IveDRAGONBoostManager} from "../../../interfaces/governance/voting/IveDRAGONBoostManager.sol";
-import {IDragonPartnerRegistry} from "../../../interfaces/governance/partners/IDragonPartnerRegistry.sol";
+import {IDragonGaugeRegistry} from "../../../interfaces/governance/partners/IDragonGaugeRegistry.sol";
 import {DragonDateTimeLib} from "../../../libraries/core/DragonDateTimeLib.sol";
 import {veDRAGONMath} from "../../../libraries/math/veDRAGONMath.sol";
 
@@ -39,7 +39,7 @@ contract veDRAGONBoostManager is Ownable, ReentrancyGuard, IveDRAGONBoostManager
   // Core contract references
   IveDRAGON public immutable veDRAGON;
   IDragonJackpotVault public jackpot;
-  IDragonPartnerRegistry public partnerRegistry;
+  IDragonGaugeRegistry public partnerRegistry;
 
   // ===== BOOST PARAMETERS =====
   /// @dev Precision for boost calculations (10000 = 100%)
@@ -154,7 +154,7 @@ contract veDRAGONBoostManager is Ownable, ReentrancyGuard, IveDRAGONBoostManager
 
     veDRAGON = IveDRAGON(_veDRAGON);
     jackpot = IDragonJackpotVault(_jackpot);
-    partnerRegistry = IDragonPartnerRegistry(_partnerRegistry);
+    partnerRegistry = IDragonGaugeRegistry(_partnerRegistry);
 
     // Initialize period and calculation timestamp
     _currentPeriod = uint64(block.timestamp / votingPeriodLength);
@@ -531,7 +531,7 @@ contract veDRAGONBoostManager is Ownable, ReentrancyGuard, IveDRAGONBoostManager
    */
   function setPartnerRegistry(address _partnerRegistry) external onlyOwner {
     if (_partnerRegistry == address(0)) revert ZeroAddress();
-    partnerRegistry = IDragonPartnerRegistry(_partnerRegistry);
+    partnerRegistry = IDragonGaugeRegistry(_partnerRegistry);
     emit PartnerRegistryUpdated(_partnerRegistry);
   }
 

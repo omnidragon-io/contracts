@@ -61,18 +61,15 @@ interface IChainlinkVRFIntegratorV2_5 {
 
   event AuthorizedCallerUpdated(address indexed caller, bool indexed authorized);
 
-  // ============ VRF FUNCTIONS ============
+  // ============ VRF FUNCTIONS (Professional API) ============
 
-  function requestRandomWords() external payable returns (uint256 requestId);
+  function quoteFee() external view returns (MessagingFee memory fee);
 
-  function requestRandomWordsSimple(
-    uint32 dstEid
-  ) external payable returns (MessagingReceipt memory receipt, uint64 sequence);
+  function quoteFeeWithGas(uint32 gasLimit) external view returns (MessagingFee memory fee);
 
-  function requestRandomWordsCrossChain(
-    uint32 dstEid,
-    bytes calldata options
-  ) external payable returns (MessagingReceipt memory receipt, uint64 sequence);
+  function requestRandomWords(uint32 dstEid) external returns (MessagingReceipt memory receipt, uint64 requestId);
+
+  function requestRandomWordsPayable(uint32 dstEid) external payable returns (MessagingReceipt memory receipt, uint64 requestId);
 
   // ============ ADMIN FUNCTIONS ============
 
@@ -101,7 +98,7 @@ interface IChainlinkVRFIntegratorV2_5 {
 
   function getRequestStatus(uint256 requestId) external view returns (bool fulfilled, uint256[] memory randomWords);
 
-  function quote(uint32 dstEid, bytes calldata options) external view returns (MessagingFee memory fee);
+  // Legacy quote signature removed in favor of quoteFee/quoteFeeWithGas
 
   // ============ LAYERZERO INTEGRATION ============
 

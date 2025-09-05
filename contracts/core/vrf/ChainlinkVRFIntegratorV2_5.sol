@@ -155,22 +155,44 @@ contract ChainlinkVRFIntegratorV2_5 is OApp, OAppOptionsType3 {
   }
 
   /**
-   * @dev Request random words from Arbitrum VRF Consumer
-   * @param _options LayerZero options for the cross-chain message
+   * @notice Quote fee using the default options
    */
-  function requestRandomWords(
-    bytes calldata _options
-  ) external payable returns (MessagingReceipt memory receipt, uint64 requestId) {
+  function quoteFee() public view returns (MessagingFee memory fee) {
+    bytes memory options = hex"000301001101000000000000000000000000000A88F4"; // default executor gas
+    bytes memory payload = abi.encode(uint64(requestCounter + 1));
+    return _quote(ARBITRUM_EID, payload, options, false);
+  }
+
+  /**
+   * @dev Request random words with custom gas limit
+   * @param _gasLimit Custom gas limit for the cross-chain execution
+   */
+  /**
+   * @notice Quote fee with a custom gas limit
+   */
+  function quoteFeeWithGas(uint32 _gasLimit) public view returns (MessagingFee memory fee) {
+    bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(_gasLimit, 0);
+    bytes memory payload = abi.encode(uint64(requestCounter + 1));
+    return _quote(ARBITRUM_EID, payload, options, false);
+  }
+
+  /**
+   * @notice Request random words (integrator-sponsored fee, default gas)
+   */
+  function requestRandomWords(uint32 dstEid)
+    public
+    returns (MessagingReceipt memory receipt, uint64 requestId)
+  {
+    require(dstEid == ARBITRUM_EID, "Invalid destination EID");
+    bytes memory options = hex"000301001101000000000000000000000000000A88F4";
+
     bytes32 peer = peers[ARBITRUM_EID];
     require(peer != bytes32(0), "Arbitrum peer not set");
 
     requestCounter++;
     requestId = requestCounter;
 
-    // Check if caller is a contract
     bool isContract = msg.sender.code.length > 0;
-
-    // Store request info
     s_requests[requestId] = RequestStatus({
       fulfilled: false,
       exists: true,
@@ -182,78 +204,72 @@ contract ChainlinkVRFIntegratorV2_5 is OApp, OAppOptionsType3 {
     randomWordsProviders[requestId] = msg.sender;
 
     bytes memory payload = abi.encode(requestId);
+    MessagingFee memory fee = quoteFee();
+    require(address(this).balance >= fee.nativeFee, "NotEnoughNative");
 
     receipt = _lzSend(
       ARBITRUM_EID,
       payload,
-      _options,
-      MessagingFee({nativeFee: msg.value, lzTokenFee: 0}),
-      payable(msg.sender)
+      options,
+      fee,
+      payable(address(this))
     );
 
     emit RandomWordsRequested(requestId, msg.sender, ARBITRUM_EID);
     emit MessageSent(requestId, ARBITRUM_EID, payload);
   }
 
-  /**
-   * @dev Request random words with custom gas limit
-   * @param _gasLimit Custom gas limit for the cross-chain execution
-   */
-  function requestRandomWordsWithGas(
-    uint32 _gasLimit
-  ) external payable returns (MessagingReceipt memory receipt, uint64 requestId) {
-    // Create options using OptionsBuilder approach that avoids the worker ID issue
-    bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(_gasLimit, 0);
-    return this.requestRandomWords{value: msg.value}(options);
-  }
+  // Custom gas requests can be achieved by updating defaultGasLimit via setDefaultGasLimit
+
+  // (Old quote* and request*Simple functions removed in favor of the professional API)
 
   /**
-   * @dev Request random words with default options (now uses 690,420 gas)
-   * Updated to be more wallet-friendly
+   * @notice Request random words with caller-provided ETH for LayerZero fees
+   * @param dstEid Destination endpoint ID (should be ARBITRUM_EID)
+   * @return receipt LayerZero messaging receipt
+   * @return requestId VRF request ID
    */
-  function requestRandomWordsSimple() external payable returns (MessagingReceipt memory receipt, uint64 requestId) {
-    // Use the exact working options format from successful transaction
-    bytes memory options = hex"000301001101000000000000000000000000000A88F4";
-    return this.requestRandomWords{value: msg.value}(options);
-  }
-
-  /**
-   * @dev Request random words with destination EID (for compatibility with LotteryManager)
-   * @param dstEid Destination endpoint ID (should be ARBITRUM_EID = 30110)
-   */
-  function requestRandomWordsSimple(uint32 dstEid) external payable returns (MessagingReceipt memory receipt, uint64 requestId) {
+  function requestRandomWordsPayable(uint32 dstEid)
+    external
+    payable
+    returns (MessagingReceipt memory receipt, uint64 requestId)
+  {
     require(dstEid == ARBITRUM_EID, "Invalid destination EID");
-    return this.requestRandomWordsSimple{value: msg.value}();
-  }
-
-  /**
-   * @dev Quote the fee for a random words request
-   * @param _options LayerZero options for the cross-chain message
-   */
-  function quote(bytes calldata _options) public view returns (MessagingFee memory fee) {
-    bytes memory payload = abi.encode(uint64(requestCounter + 1));
-    fee = _quote(ARBITRUM_EID, payload, _options, false);
-  }
-
-  /**
-   * @dev Quote fee with custom gas limit
-   * @param _gasLimit Custom gas limit for the cross-chain execution
-   */
-  function quoteWithGas(uint32 _gasLimit) public view returns (MessagingFee memory fee) {
-    // Use OptionsBuilder for custom gas limit
-    bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(_gasLimit, 0);
-    bytes memory payload = abi.encode(uint64(requestCounter + 1));
-    return _quote(ARBITRUM_EID, payload, options, false);
-  }
-
-  /**
-   * @dev Quote fee for simple request
-   */
-  function quoteSimple() public view returns (MessagingFee memory fee) {
-    // Use the exact working options format from successful transaction
     bytes memory options = hex"000301001101000000000000000000000000000A88F4";
-    bytes memory payload = abi.encode(uint64(requestCounter + 1));
-    return _quote(ARBITRUM_EID, payload, options, false);
+
+    bytes32 peer = peers[ARBITRUM_EID];
+    require(peer != bytes32(0), "Arbitrum peer not set");
+
+    requestCounter++;
+    requestId = requestCounter;
+
+    bool isContract = msg.sender.code.length > 0;
+    s_requests[requestId] = RequestStatus({
+      fulfilled: false,
+      exists: true,
+      provider: msg.sender,
+      randomWord: 0,
+      timestamp: block.timestamp,
+      isContract: isContract
+    });
+    randomWordsProviders[requestId] = msg.sender;
+
+    bytes memory payload = abi.encode(requestId);
+    MessagingFee memory fee = quoteFee();
+    require(msg.value >= fee.nativeFee, "Insufficient fee provided");
+
+    receipt = _lzSend(
+      ARBITRUM_EID,
+      payload,
+      options,
+      fee,
+      payable(msg.sender) // Return excess to caller
+    );
+
+    emit RandomWordsRequested(requestId, msg.sender, ARBITRUM_EID);
+    emit MessageSent(requestId, ARBITRUM_EID, payload);
+
+    return (receipt, requestId);
   }
 
   /**
@@ -291,6 +307,22 @@ contract ChainlinkVRFIntegratorV2_5 is OApp, OAppOptionsType3 {
         emit RequestExpired(requestId, provider);
       }
     }
+  }
+
+  /**
+   * @dev Override _payNative to allow paying LayerZero fees from contract balance
+   * When msg.value is 0 (standard for this integrator), use the contract balance
+   * to cover the native fee required by the LayerZero Endpoint.
+   */
+  function _payNative(uint256 _nativeFee) internal override returns (uint256 nativeFee) {
+    if (msg.value == 0) {
+      require(address(this).balance >= _nativeFee, "NotEnoughNative");
+      return _nativeFee;
+    }
+
+    // If a caller sends value, enforce exact payment semantics expected by OApp
+    if (msg.value != _nativeFee) revert NotEnoughNative(msg.value);
+    return _nativeFee;
   }
 
   /**
