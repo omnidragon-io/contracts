@@ -176,7 +176,6 @@ The OmniDragon ecosystem leverages LayerZero V2 for seamless cross-chain functio
 - **Base** (EID: 30184)
 - **Avalanche** (EID: 30106)
 - **Sonic** (EID: 30332)
-- **BSC** (EID: 30102) - Planned
 
 ### Key Cross-Chain Features
 1. **Omnichain Tokens**: DRAGON transfers across all supported chains
