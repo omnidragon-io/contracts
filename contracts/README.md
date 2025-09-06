@@ -67,8 +67,6 @@ contracts/
 - **Features**: Lock redDRAGON for voting power, time-weighted voting
 - **Status**: Under construction
 
-> **🔍 AUDIT READY**: All contracts except the above three (redDRAGON.sol, veDRAGON.sol, GaugeController.sol) are ready for smart contract audit.
-
 ### Lottery System (`core/lottery/`)
 
 #### OmniDragonLotteryManager.sol
