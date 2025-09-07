@@ -3,340 +3,290 @@ pragma solidity ^0.8.20;
 
 /**
  * @title DragonJackpotVault
- * @author  0xakita.eth
- * @notice  Holds the jackpot across wS, pfwS-36 (ERC-4626 wS vault shares), and pDRAGON (ERC-4626 DRAGON pod shares).
- *          - Payouts are made in wS only.
- *          - pfwS-36 is redeemed to wS when needed.
- *          - pDRAGON is *not* redeemed during payouts (accounted only in USD view via oracle).
+ * @author  0xakita.eth (reworked with safety-first accounting)
  *
+ * Key points:
+ * - pfwS-36 is an ERC-4626 autocompounding vault for wS → use convertToAssets()/withdraw()/redeem()
+ * - pDRAGON is an ERC-4626 vault for DRAGON (Peapods) → convertToAssets()/redeem() to DRAGON
+ * - Winners are ALWAYS paid in wS
+ * - pDRAGON → DRAGON → wS unwinding is delegated to a whitelisted `unwinder`
+ * - USD valuation uses pluggable token->oracle (price in 1e18; USD result in 1e6)
  */
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-interface IERC4626Minimal {
+interface IERC4626 {
   function asset() external view returns (address);
   function convertToAssets(uint256 shares) external view returns (uint256 assets);
   function convertToShares(uint256 assets) external view returns (uint256 shares);
   function previewWithdraw(uint256 assets) external view returns (uint256 shares);
   function previewRedeem(uint256 shares) external view returns (uint256 assets);
+  function withdraw(uint256 assets, address receiver, address owner) external returns (uint256 shares);
   function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
 }
 
 interface IPriceOracleLike {
-  /// @dev Returns TOKEN/USD price scaled to 1e18; timestamp is for staleness checks on the oracle side.
+  /// @dev returns TOKEN/USD price with 1e18 decimals, timestamp (not enforced here)
   function getLatestPrice() external view returns (int256 price1e18, uint256 timestamp);
 }
 
-contract DragonJackpotVault is Ownable, ReentrancyGuard, Pausable {
+contract DragonJackpotVault is Ownable, ReentrancyGuard {
   using SafeERC20 for IERC20;
 
-  // ---- Core tokens (set once, can be updated by owner if necessary) ----
-  address public WRAPPED_SONIC;       // wS payout token
-  address public PFWS36_SHARE_TOKEN;  // pfwS-36 vault share token (ERC-4626, underlying = wS)
-  address public PDRAGON;             // pDRAGON vault share token (ERC-4626, underlying = DRAGON)
-  address public DRAGON;              // DRAGON token (underlying for pDRAGON)
+  // ---- Core assets
+  IERC20 public immutable wS;                // Wrapped Sonic (native)
+  IERC4626 public immutable pfwS36;                    // Autocompounding vault for wS (shares)
+  IERC4626 public immutable pDRAGON;                   // Peapods vault for DRAGON (shares)
 
-  // ---- Price oracles: TOKEN -> USD(1e18) ----
-  mapping(address => address) public tokenUsdOracle; // token => oracle
+  IERC20 public immutable DRAGON;            // Underlying token of pDRAGON
 
-  // ---- Authorized payout callers (e.g., OmniDragonLotteryManager) ----
-  mapping(address => bool) public authorizedPayer;
+  // ---- Roles / integrations
+  address public unwinder;                   // Keeper/unwinder allowed to redeem pDRAGON and pull DRAGON out
+  mapping(address => bool) public authorizedPayers;  // Authorized contracts that can call payJackpot
 
-  // ---- Events ----
-  event PayerAuthorizationUpdated(address indexed caller, bool authorized);
-  event TokenAddressesUpdated(address wS, address pfwS36, address pDRAGON, address dragon);
-  event TokenUsdOracleSet(address indexed token, address indexed oracle);
+  // ---- Oracles (TOKEN -> Oracle returning TOKEN/USD with 1e18)
+  mapping(address => IPriceOracleLike) public tokenUsdOracle;
+
+  // ---- Events
   event JackpotPaid(address indexed winner, uint256 amountWS);
-  event Pfws36Redeemed(uint256 shares, uint256 assetsReceived);
-  event EmergencyTokenRecovered(address indexed token, address indexed to, uint256 amount);
-  event EmergencyNativeRecovered(address indexed to, uint256 amount);
+  event PfwSRedeemed(uint256 shares, uint256 assetsWS);
+  event PDragonRedeemed(uint256 shares, uint256 assetsDRAGON);
+  event UnwinderSet(address indexed unwinder);
+  event TokenOracleSet(address indexed token, address indexed oracle);
+  event DragonPulledToUnwinder(uint256 amount);
+  event PDragonRedeemedToVault(uint256 shares, uint256 assetsDRAGON);
+  event PayerAuthorizationUpdated(address indexed payer, bool authorized);
 
-  // ---- Modifiers ----
-  modifier onlyAuthorizedPayer() {
-    require(authorizedPayer[msg.sender], "Not authorized to pay");
-    _;
-  }
+  // ---- Errors
+  error InvalidAddress();
+  error InsufficientLiquidity();
+  error NotUnwinder();
+  error NotAuthorizedPayer();
+  error OracleUnavailable(address token);
 
   constructor(
     address _wS,
     address _pfwS36,
-    address _pDRAGON,
-    address _dragon,
-    address _owner
-  ) Ownable(_owner) {
-    require(_wS != address(0) && _pfwS36 != address(0) && _pDRAGON != address(0) && _dragon != address(0), "zero addr");
-    WRAPPED_SONIC = _wS;
-    PFWS36_SHARE_TOKEN = _pfwS36;
-    PDRAGON = _pDRAGON;
-    DRAGON = _dragon;
-    emit TokenAddressesUpdated(_wS, _pfwS36, _pDRAGON, _dragon);
-  }
+    address _pDRAGON
+  ) Ownable(msg.sender) {
+    if (_wS == address(0) || _pfwS36 == address(0) || _pDRAGON == address(0)) revert InvalidAddress();
 
-  // ---------------------------------------------------------------------
-  // Admin
-  // ---------------------------------------------------------------------
+    // Wire tokens
+    wS = IERC20(_wS);
+    pfwS36 = IERC4626(_pfwS36);
+    pDRAGON = IERC4626(_pDRAGON);
 
-  function setTokens(
-    address _wS,
-    address _pfwS36,
-    address _pDRAGON,
-    address _dragon
-  ) external onlyOwner {
-    require(_wS != address(0) && _pfwS36 != address(0) && _pDRAGON != address(0) && _dragon != address(0), "zero addr");
-    WRAPPED_SONIC = _wS;
-    PFWS36_SHARE_TOKEN = _pfwS36;
-    PDRAGON = _pDRAGON;
-    DRAGON = _dragon;
-    emit TokenAddressesUpdated(_wS, _pfwS36, _pDRAGON, _dragon);
-  }
+    // Sanity for underlying tokens
+    address pfwSAsset = pfwS36.asset();    // should be wS
+    require(pfwSAsset == _wS, "pfwS-36 asset != wS");
 
-  /// @notice Set or update the TOKEN/USD(1e18) oracle used for USD views.
-  function setTokenUsdOracle(address token, address oracle) external onlyOwner {
-    require(token != address(0) && oracle != address(0), "zero addr");
-    tokenUsdOracle[token] = oracle;
-    emit TokenUsdOracleSet(token, oracle);
-  }
-
-  function authorizePayer(address caller, bool auth) external onlyOwner {
-    authorizedPayer[caller] = auth;
-    emit PayerAuthorizationUpdated(caller, auth);
-  }
-
-  function pause() external onlyOwner { _pause(); }
-  function unpause() external onlyOwner { _unpause(); }
-
-  // ---------------------------------------------------------------------
-  // Internal helpers
-  // ---------------------------------------------------------------------
-
-  function _sharesToUnderlying(address vault, uint256 shares) internal view returns (address underlying, uint256 assets) {
-    if (shares == 0 || vault == address(0)) return (address(0), 0);
-    try IERC4626Minimal(vault).asset() returns (address u) {
-      underlying = u;
-      try IERC4626Minimal(vault).convertToAssets(shares) returns (uint256 a) {
-        assets = a;
-      } catch {
-        assets = 0;
-            }
-        } catch {
-      underlying = address(0);
-      assets = 0;
+    // Try to get DRAGON address, but handle beacon proxy pattern gracefully
+    address drg;
+    try pDRAGON.asset() returns (address _drg) {
+      drg = _drg;
+    } catch {
+      // If asset() fails (beacon proxy not initialized), use hardcoded DRAGON address
+      // DRAGON token on Sonic: 0x40f531123bce8962D9ceA52a3B150023bef488Ed (ffDRAGON)
+      drg = 0x40f531123bce8962D9ceA52a3B150023bef488Ed;
     }
+    DRAGON = IERC20(drg);
   }
+
+  // -----------------------------
+  // Admin & configuration
+  // -----------------------------
+
+  function setUnwinder(address _unwinder) external onlyOwner {
+    if (_unwinder == address(0)) revert InvalidAddress();
+    unwinder = _unwinder;
+    emit UnwinderSet(_unwinder);
+  }
+
+  /// @notice Authorize or revoke a payer (e.g., lottery manager)
+  function setAuthorizedPayer(address payer, bool authorized) external onlyOwner {
+    if (payer == address(0)) revert InvalidAddress();
+    authorizedPayers[payer] = authorized;
+    emit PayerAuthorizationUpdated(payer, authorized);
+  }
+
+  /// @notice Set or update a TOKEN->USD oracle (1e18 price)
+  function setTokenUsdOracle(address token, address oracle) external onlyOwner {
+    if (token == address(0) || oracle == address(0)) revert InvalidAddress();
+    tokenUsdOracle[token] = IPriceOracleLike(oracle);
+    emit TokenOracleSet(token, oracle);
+  }
+
+  // -----------------------------
+  // Views: balances & valuation
+  // -----------------------------
+
+  /// @notice Raw balances held by the vault
+  /// @return wsDirect   wS directly held
+  /// @return pfwShares  pfwS-36 share balance
+  /// @return drgDirect  DRAGON directly held (if any)
+  /// @return pdrgShares pDRAGON share balance
+  function getRawBalances()
+    public
+    view
+    returns (uint256 wsDirect, uint256 pfwShares, uint256 drgDirect, uint256 pdrgShares)
+  {
+    wsDirect   = wS.balanceOf(address(this));
+    pfwShares  = IERC20(address(pfwS36)).balanceOf(address(this));
+    drgDirect  = DRAGON.balanceOf(address(this));
+    pdrgShares = IERC20(address(pDRAGON)).balanceOf(address(this));
+  }
+
+  /// @notice Underlying exposures (after ERC-4626 conversions)
+  /// @dev pfwS-36 -> wS / pDRAGON -> DRAGON
+  /// @return totalWS     wS exposure = direct wS + pfwS-36 converted to assets
+  /// @return totalDRAGON DRAGON exposure = direct DRAGON + pDRAGON converted to assets
+  function getUnderlyingExposures()
+    public
+    view
+    returns (uint256 totalWS, uint256 totalDRAGON)
+  {
+    (uint256 wsDirect, uint256 pfwShares, uint256 drgDirect, uint256 pdrgShares) = getRawBalances();
+
+    uint256 wsFromPfw = pfwShares == 0 ? 0 : pfwS36.convertToAssets(pfwShares);
+    uint256 drgFromP = pdrgShares == 0 ? 0 : pDRAGON.convertToAssets(pdrgShares);
+
+    totalWS = wsDirect + wsFromPfw;
+    totalDRAGON = drgDirect + drgFromP;
+  }
+
+  /// @notice Convenience (legacy) "jackpot balance" measured in wS units you can *reasonably* expect to realize quickly
+  /// @dev This is an estimate: direct wS + pfwS-36.convertToAssets(shares). DRAGON exposure is intentionally excluded.
+  function getJackpotBalance() external view returns (uint256) {
+    (uint256 wsDirect, uint256 pfwShares,,) = getRawBalances();
+    uint256 wsFromPfw = pfwShares == 0 ? 0 : pfwS36.convertToAssets(pfwShares);
+    return wsDirect + wsFromPfw;
+  }
+
+  /// @notice Full USD valuation (1e6), using configured TOKEN→USD (1e18) oracles
+  /// @dev Returns (wsUsd, dragonUsd, totalUsd). If an oracle is missing, that leg returns 0.
+  function getJackpotUsd()
+    external
+    view
+    returns (uint256 wsUsd1e6, uint256 dragonUsd1e6, uint256 totalUsd1e6)
+  {
+    (uint256 totalWS, uint256 totalDRAGON) = getUnderlyingExposures();
+    wsUsd1e6     = _toUsd1e6(address(wS), totalWS);
+    dragonUsd1e6 = _toUsd1e6(address(DRAGON), totalDRAGON);
+    totalUsd1e6  = wsUsd1e6 + dragonUsd1e6;
+  }
+
+  // -----------------------------
+  // Payout & liquidity management
+  // -----------------------------
+
+  /**
+   * @notice Pay jackpot strictly in wS
+   * @dev Will redeem pfwS-36 shares if needed. Will NOT auto-swap DRAGON; if not enough wS + pfwS-36, it reverts.
+   */
+  function payJackpot(address to, uint256 amountWS) external nonReentrant {
+    if (msg.sender != owner() && !authorizedPayers[msg.sender]) revert NotAuthorizedPayer();
+    require(to != address(0), "invalid winner");
+    if (amountWS == 0) return;
+
+    // 1) Use direct wS
+    uint256 wsBal = wS.balanceOf(address(this));
+    if (wsBal >= amountWS) {
+      wS.safeTransfer(to, amountWS);
+      emit JackpotPaid(to, amountWS);
+      return;
+    }
+
+    // 2) Redeem pfwS-36 shares to cover the shortfall
+    uint256 shortfall = amountWS - wsBal;
+    uint256 pfwShares = IERC20(address(pfwS36)).balanceOf(address(this));
+    if (pfwShares > 0) {
+      uint256 sharesNeeded;
+      // Prefer previewWithdraw if implemented
+      try pfwS36.previewWithdraw(shortfall) returns (uint256 s) {
+        sharesNeeded = s;
+      } catch {
+        // fallback: convertToShares (may differ slightly due to fees/rounding)
+        sharesNeeded = pfwS36.convertToShares(shortfall);
+      }
+
+      if (sharesNeeded > pfwShares) {
+        sharesNeeded = pfwShares;
+      }
+
+      if (sharesNeeded > 0) {
+        // redeem()/withdraw() delivers underlying to receiver
+        // We'll use redeem to pull the maximum wS from sharesNeeded
+        uint256 assetsOut = pfwS36.redeem(sharesNeeded, address(this), address(this));
+        emit PfwSRedeemed(sharesNeeded, assetsOut);
+      }
+    }
+
+    // 3) Transfer if sufficient now
+    wsBal = wS.balanceOf(address(this));
+    if (wsBal < amountWS) {
+      revert InsufficientLiquidity();
+    }
+
+    wS.safeTransfer(to, amountWS);
+    emit JackpotPaid(to, amountWS);
+  }
+
+  /**
+   * @notice (Keeper) Redeem pDRAGON shares to DRAGON and keep DRAGON inside this vault.
+   * @dev Unwinder can then pull DRAGON out and swap off-vault to refill wS buffer.
+   */
+  function redeemPDragonToDragon(uint256 shares) external nonReentrant {
+    if (msg.sender != owner() && msg.sender != unwinder) revert NotUnwinder();
+    if (shares == 0) return;
+
+    uint256 assets = pDRAGON.redeem(shares, address(this), address(this));
+    emit PDragonRedeemedToVault(shares, assets);
+  }
+
+  /**
+   * @notice (Keeper) Pull DRAGON out to the unwinder for off-vault swapping.
+   */
+  function pullDragonToUnwinder(uint256 amount) external nonReentrant {
+    if (msg.sender != owner() && msg.sender != unwinder) revert NotUnwinder();
+    if (amount == 0) return;
+
+    DRAGON.safeTransfer(unwinder, amount);
+    emit DragonPulledToUnwinder(amount);
+  }
+
+  // -----------------------------
+  // Internal valuation helpers
+  // -----------------------------
 
   function _toUsd1e6(address token, uint256 amount) internal view returns (uint256) {
     if (amount == 0) return 0;
-    address oracle = tokenUsdOracle[token];
-    if (oracle == address(0)) return 0;
-    try IPriceOracleLike(oracle).getLatestPrice() returns (int256 px1e18, uint256 /*ts*/) {
-      if (px1e18 <= 0) return 0;
-      uint8 dec;
-      try IERC20Metadata(token).decimals() returns (uint8 d) { dec = d; } catch { dec = 18; }
-      // USD(1e6) = amount * price(1e18) / 10^dec / 1e12
-      return (amount * uint256(px1e18)) / (10 ** dec) / 1e12;
-    } catch {
-      return 0;
-    }
-  }
 
-  function _min(uint256 a, uint256 b) internal pure returns (uint256) {
-    return a < b ? a : b;
-  }
-
-  // ---------------------------------------------------------------------
-  // Public views
-  // ---------------------------------------------------------------------
-
-  /**
-   * @notice Raw token balances held by the vault (no conversions)
-   */
-  function getJackpotTokenBalances()
-    external
-    view
-    returns (
-      uint256 wsBalance,
-      uint256 pfws36Shares,
-      uint256 pdragonShares,
-      uint256 dragonBalance
-    )
-  {
-    wsBalance      = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-    pfws36Shares   = IERC20(PFWS36_SHARE_TOKEN).balanceOf(address(this));
-    pdragonShares  = IERC20(PDRAGON).balanceOf(address(this));
-    dragonBalance  = IERC20(DRAGON).balanceOf(address(this)); // usually zero unless someone sent DRAGON directly
-  }
-
-  /**
-   * @notice How much **wS can be paid out right now**, without touching pDRAGON.
-   * @dev This is what the lottery should use to size prizes.
-   */
-  function getJackpotCapacityWS() public view returns (uint256 wsCapacity) {
-    uint256 wsBal = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-    uint256 pfws36Bal = IERC20(PFWS36_SHARE_TOKEN).balanceOf(address(this));
-    (, uint256 wsFromPfws36) = _sharesToUnderlying(PFWS36_SHARE_TOKEN, pfws36Bal);
-    wsCapacity = wsBal + wsFromPfws36;
-  }
-
-  /**
-   * @notice Backwards-compatible jackpot getter used by OmniDragonLotteryManager.
-   * @dev Returns **wS payout capacity** (wS + pfwS-36 converted to wS). Does NOT include pDRAGON,
-   *      because pDRAGON is not wS and cannot be paid without separate unwind logic.
-   */
-  function getJackpotBalance() public view returns (uint256) {
-    return getJackpotCapacityWS();
-  }
-
-  /**
-   * @notice USD(1e6) valuation of everything: wS + pfwS-36 (as wS) + pDRAGON (as DRAGON) + raw DRAGON.
-   * @dev For UI/display. Oracles must be configured via setTokenUsdOracle.
-   */
-  function getJackpotUsd1e6() public view returns (uint256 totalUsd) {
-    // wS (raw)
-    uint256 wsBal = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-    uint256 wsUsd = _toUsd1e6(WRAPPED_SONIC, wsBal);
-
-    // pfwS-36 -> wS
-    uint256 pfws36Shares = IERC20(PFWS36_SHARE_TOKEN).balanceOf(address(this));
-    (, uint256 wsFromPfws36) = _sharesToUnderlying(PFWS36_SHARE_TOKEN, pfws36Shares);
-    uint256 pfws36Usd = _toUsd1e6(WRAPPED_SONIC, wsFromPfws36);
-
-    // pDRAGON -> DRAGON
-    uint256 pdragonShares = IERC20(PDRAGON).balanceOf(address(this));
-    (, uint256 dragonFromPdragon) = _sharesToUnderlying(PDRAGON, pdragonShares);
-    uint256 pdragonUsd = _toUsd1e6(DRAGON, dragonFromPdragon);
-
-    // raw DRAGON (if any)
-    uint256 dragonBal = IERC20(DRAGON).balanceOf(address(this));
-    uint256 dragonUsd = _toUsd1e6(DRAGON, dragonBal);
-
-    totalUsd = wsUsd + pfws36Usd + pdragonUsd + dragonUsd;
-  }
-
-  /**
-   * @notice Detailed USD(1e6) breakdown for front-ends and monitoring.
-   */
-  function getJackpotBreakdownUsd1e6()
-    external
-    view
-    returns (
-      // underlying amounts
-      uint256 wsRaw, uint256 wsFromPfws36, uint256 dragonFromPdragon, uint256 dragonRaw,
-      // USD valuations
-      uint256 wsUsd, uint256 pfws36Usd, uint256 pdragonUsd, uint256 dragonUsd,
-      uint256 totalUsd
-    )
-  {
-    wsRaw = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-
-    uint256 pfws36Shares = IERC20(PFWS36_SHARE_TOKEN).balanceOf(address(this));
-    (, wsFromPfws36) = _sharesToUnderlying(PFWS36_SHARE_TOKEN, pfws36Shares);
-
-    uint256 pdragonShares = IERC20(PDRAGON).balanceOf(address(this));
-    (, dragonFromPdragon) = _sharesToUnderlying(PDRAGON, pdragonShares);
-
-    dragonRaw = IERC20(DRAGON).balanceOf(address(this));
-
-    wsUsd       = _toUsd1e6(WRAPPED_SONIC, wsRaw);
-    pfws36Usd   = _toUsd1e6(WRAPPED_SONIC, wsFromPfws36);
-    pdragonUsd  = _toUsd1e6(DRAGON, dragonFromPdragon);
-    dragonUsd   = _toUsd1e6(DRAGON, dragonRaw);
-
-    totalUsd = wsUsd + pfws36Usd + pdragonUsd + dragonUsd;
-  }
-
-  // ---------------------------------------------------------------------
-  // Payouts (wS only)
-  // ---------------------------------------------------------------------
-
-  /**
-   * @notice Pay a jackpot in **wS units**. Pulls wS first, then redeems pfwS-36 for the shortfall.
-   * @dev Callable only by authorized lottery manager(s). No DRAGON/pDRAGON is touched here.
-   */
-  function payJackpot(address recipient, uint256 amountWS)
-    external
-    nonReentrant
-    whenNotPaused
-    onlyAuthorizedPayer
-  {
-    require(recipient != address(0), "zero recipient");
-    require(amountWS > 0, "zero amount");
-
-    uint256 wsBal = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-    uint256 toSend = _min(amountWS, wsBal);
-    if (toSend > 0) {
-      IERC20(WRAPPED_SONIC).safeTransfer(recipient, toSend);
+    IPriceOracleLike oracle = tokenUsdOracle[token];
+    if (address(oracle) == address(0)) {
+      return 0; // no revert in views: return 0 for missing oracle leg
     }
 
-    uint256 remaining = amountWS - toSend;
-    if (remaining > 0) {
-      uint256 pfws36Shares = IERC20(PFWS36_SHARE_TOKEN).balanceOf(address(this));
-      require(pfws36Shares > 0, "insufficient wS + pfwS36");
+    (int256 p1e18, /*ts*/) = oracle.getLatestPrice();
+    if (p1e18 <= 0) return 0;
 
-      // Ask vault how many shares are needed for the requested assets
-      uint256 sharesNeeded;
-      // Prefer previewWithdraw(assets) if implemented
-      try IERC4626Minimal(PFWS36_SHARE_TOKEN).previewWithdraw(remaining) returns (uint256 s) {
-        sharesNeeded = s;
-      } catch {
-        // Fallback: approximate using convertToShares
-        try IERC4626Minimal(PFWS36_SHARE_TOKEN).convertToShares(remaining) returns (uint256 s2) {
-          sharesNeeded = s2;
-        } catch {
-          // Final fallback: redeem everything and send whatever we get (bounded by remaining)
-          sharesNeeded = pfws36Shares;
-        }
-      }
+    uint8 dec;
+    try IERC20Metadata(token).decimals() returns (uint8 d) { dec = d; } catch { dec = 18; }
 
-      if (sharesNeeded > pfws36Shares) {
-        sharesNeeded = pfws36Shares; // redeem as much as we can
-      }
-
-      uint256 assetsBefore = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-      uint256 assetsOut = 0;
-      try IERC4626Minimal(PFWS36_SHARE_TOKEN).redeem(sharesNeeded, address(this), address(this)) returns (uint256 a) {
-        assetsOut = a;
-      } catch {
-        revert("pfwS36 redeem failed");
-      }
-      emit Pfws36Redeemed(sharesNeeded, assetsOut);
-
-      // Transfer the remainder (up to what we actually redeemed)
-      uint256 newWsBal = IERC20(WRAPPED_SONIC).balanceOf(address(this));
-      uint256 delta = newWsBal - assetsBefore;
-      uint256 toSend2 = _min(remaining, delta);
-      require(toSend2 > 0, "no wS redeemed");
-
-      IERC20(WRAPPED_SONIC).safeTransfer(recipient, toSend2);
-
-      // If still short, revert to avoid partial payouts beyond the model
-      require(toSend + toSend2 == amountWS, "insufficient liquidity");
-    }
-
-    emit JackpotPaid(recipient, amountWS);
+    // USD(1e6) = amount * price(1e18) / (10^decimals * 1e12)
+    return (amount * uint256(p1e18)) / (10 ** dec) / 1e12;
   }
 
-  // ---------------------------------------------------------------------
-  // Emergency / Recovery
-  // ---------------------------------------------------------------------
+  // -----------------------------
+  // Rescue / admin
+  // -----------------------------
 
-  /// @notice Recover arbitrary ERC20 tokens (e.g. mistaken sends). Not for jackpot flow.
-  function recoverToken(address token, address to, uint256 amount) external onlyOwner nonReentrant {
-    require(to != address(0), "zero to");
-    IERC20(token).safeTransfer(to, amount);
-    emit EmergencyTokenRecovered(token, to, amount);
-  }
-
-  /// @notice Recover native currency if any.
-  function recoverNative(address payable to, uint256 amount) external onlyOwner nonReentrant {
-    require(to != address(0), "zero to");
-    (bool ok, ) = to.call{value: amount}("");
-    require(ok, "native transfer failed");
-    emit EmergencyNativeRecovered(to, amount);
+  function rescueToken(IERC20 token, address to, uint256 amount) external onlyOwner {
+    require(to != address(0), "invalid to");
+    token.safeTransfer(to, amount);
   }
 
   receive() external payable {}

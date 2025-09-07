@@ -17,7 +17,12 @@ interface IOmniDragonOracle is IOAppCore {
      * @return price The price in 18 decimals
      * @return timestamp The timestamp of the last price update
      */
-    function getLatestPrice() external view returns (int256 price, uint256 timestamp);
+    // Removed legacy getLatestPrice()
+    
+    /**
+     * @dev Simple getter: DRAGON/USD price (1e18) and timestamp
+     */
+    function getDragonPrice() external view returns (int256 price, uint256 timestamp);
     
     /**
      * @dev Update the price (triggers price refresh)
@@ -34,12 +39,17 @@ interface IOmniDragonOracle is IOAppCore {
     function getNativeTokenPrice() external view returns (int256 price, bool isValid, uint256 timestamp);
     
     /**
+     * @dev Simple getter: native token/USD price (1e18) and timestamp
+     */
+    function getNativePrice() external view returns (int256 price, uint256 timestamp);
+    
+    /**
      * @dev Get both DRAGON and Native prices in one call
      * @return dragonPrice The DRAGON/USD price in 18 decimals
      * @return nativePrice The Native/USD price in 18 decimals
      * @return timestamp The timestamp of the last price update
      */
-    function getLatestPriceWithNative() external view returns (
+    function getDragonPriceWithNative() external view returns (
         int256 dragonPrice,
         int256 nativePrice, 
         uint256 timestamp

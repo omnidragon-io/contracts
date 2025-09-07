@@ -425,7 +425,7 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, Pausable, IVRFCal
       
       // Fallback to primary oracle if no token oracle configured
       if (!priceObtained && address(primaryOracle) != address(0)) {
-        try primaryOracle.getLatestPrice() returns (int256 price, uint256 /* timestamp */) {
+        try primaryOracle.getDragonPrice() returns (int256 price, uint256 /* timestamp */) {
           if (price > 0) {
             // Get token decimals
             uint8 decimals = 18;
@@ -978,6 +978,41 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, Pausable, IVRFCal
     }
   }
 
+  /**
+   * @notice Get the jackpot USD breakdown from the vault
+   * @return wsUsd USD value of wS exposure (1e6)
+   * @return dragonUsd USD value of DRAGON exposure (1e6)
+   * @return totalUsd Total USD value (1e6)
+   */
+  function getJackpotUsdBreakdown()
+    external
+    view
+    returns (uint256 wsUsd, uint256 dragonUsd, uint256 totalUsd)
+  {
+    if (address(jackpotVault) == address(0)) {
+      return (0, 0, 0);
+    }
+    try jackpotVault.getJackpotUsd() returns (uint256 a, uint256 b, uint256 c) {
+      return (a, b, c);
+    } catch {
+      return (0, 0, 0);
+    }
+  }
+
+  /**
+   * @notice Get the total jackpot USD value (1e6)
+   */
+  function getJackpotUsdTotal() external view returns (uint256) {
+    if (address(jackpotVault) == address(0)) {
+      return 0;
+    }
+    try jackpotVault.getJackpotUsd() returns (uint256 /*wsUsd*/, uint256 /*dragonUsd*/, uint256 totalUsd) {
+      return totalUsd;
+    } catch {
+      return 0;
+    }
+  }
+
   function getVrfFee() external view returns (uint256) {
     if (address(vrfIntegrator) == address(0)) return 0;
     MessagingFee memory feeQuote = vrfIntegrator.quoteFee();
@@ -1199,7 +1234,7 @@ contract OmniDragonLotteryManager is Ownable, ReentrancyGuard, Pausable, IVRFCal
    * @param to Recipient address
    * @param amount Amount to withdraw
    */
-  function withdrawNative(address payable to, uint256 amount) external onlyOwner {
+  function withdrawNative(address payable to, uint256 amount) external onlyOwner nonReentrant {
     require(to != address(0), "Invalid recipient");
     require(amount <= address(this).balance, "Insufficient balance");
     
