@@ -577,7 +577,7 @@ contract OptimizedFeeMHelper is Ownable, ReentrancyGuard {
     /**
      * @dev Emergency withdraw - forward assets to jackpot vault
      */
-    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
+    function emergencyWithdraw(address token, uint256 amount) external onlyOwner nonReentrant {
         if (token == address(0)) {
             // Native token
             uint256 balance = address(this).balance;

@@ -18,6 +18,7 @@ pragma solidity ^0.8.20;
  */
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
 import {MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
 import {OAppOptionsType3} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OAppOptionsType3.sol";
@@ -35,7 +36,7 @@ import "../../../lib/chainlink-vrf-v2.5/IVRFCoordinatorV2Plus.sol";
 // Use the library from the imported file
 import {VRFV2PlusClient} from "../../../lib/chainlink-vrf-v2.5/IVRFCoordinatorV2Plus.sol";
 
-contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3 {
+contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3, ReentrancyGuard {
   using OptionsBuilder for bytes;
 
   IVRFCoordinatorV2Plus public vrfCoordinator;
@@ -435,7 +436,8 @@ contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3 {
     require(bytes(chainName).length > 0, "Chain name required");
 
     bool found = false;
-    for (uint i = 0; i < registeredChainEids.length; i++) {
+    uint256 regLen = registeredChainEids.length;
+    for (uint i = 0; i < regLen; i++) {
       if (registeredChainEids[i] == chainEid) {
         found = true;
         break;
@@ -492,7 +494,8 @@ contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3 {
       gasLimits[i] = chainGasLimits[baseChains[i]];
     }
 
-    for (uint i = 0; i < registeredChainEids.length; i++) {
+    uint256 dynLen = registeredChainEids.length;
+    for (uint i = 0; i < dynLen; i++) {
       uint256 index = baseChains.length + i;
       eids[index] = registeredChainEids[i];
       supported[index] = supportedChains[registeredChainEids[i]];
@@ -539,7 +542,8 @@ contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3 {
       gasLimits[i] = chainGasLimits[baseChains[i]];
     }
 
-    for (uint i = 0; i < registeredChainEids.length; i++) {
+    uint256 dynLen2 = registeredChainEids.length;
+    for (uint i = 0; i < dynLen2; i++) {
       uint256 index = baseChains.length + i;
       eids[index] = registeredChainEids[i];
       names[index] = chainNames[registeredChainEids[i]];
@@ -785,7 +789,7 @@ contract OmniDragonVRFConsumerV2_5 is OApp, OAppOptionsType3 {
   /**
    * @dev Withdraw ETH (owner only)
    */
-  function withdraw() external onlyOwner {
+  function withdraw() external onlyOwner nonReentrant {
     uint256 balance = address(this).balance;
     require(balance > 0, "No balance to withdraw");
 
